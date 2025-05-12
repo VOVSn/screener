@@ -1,21 +1,24 @@
+# screenshot_ollama.py
+
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, font as tkFont
 import threading
-import io
-import platform
-import time
-import base64
-import json
+# import io # No longer needed here for Ollama part
+# import base64 # No longer needed here for Ollama part
+# import json # No longer needed here for Ollama part
 import re
 from functools import partial
+import platform
+import time
+
 
 # --- Third-Party Imports ---
 import pyautogui
 from PIL import Image, ImageDraw
 from pynput import keyboard # Using GlobalHotKeys below
-import requests
+# import requests # No longer needed here
 
-# --- Local Settings Import ---
+# --- Local Imports ---
 try:
     import settings
     # Validate DEFAULT_MANUAL_ACTION exists
@@ -24,12 +27,26 @@ try:
             f"DEFAULT_MANUAL_ACTION '{settings.DEFAULT_MANUAL_ACTION}' "
             f"not found in HOTKEY_ACTIONS keys in settings.py"
         )
+    # Import the new utility and its exceptions
+    import ollama_utils
+    from ollama_utils import (
+        OllamaError, OllamaConnectionError, OllamaTimeoutError, OllamaRequestError
+    )
+
 except ImportError as e:
-    err_msg = f'FATAL ERROR in settings: {e}'
-    print(err_msg)
+    # Enhanced error message to potentially include missing ollama_utils
+    base_msg = f'FATAL ERROR: {e}'
+    if 'ollama_utils' in str(e):
+        base_msg += "\n\nPlease ensure 'ollama_utils.py' is in the same directory as 'screener.py'."
+    elif 'settings' in str(e):
+         base_msg = f'FATAL ERROR in settings: {e}'
+    print(base_msg)
+
     try: # Attempt to show GUI error if possible
         root = tk.Tk(); root.withdraw()
-        messagebox.showerror('Settings Error', f'Error loading settings.py:\n{e}')
+        err_title = settings.DIALOG_SETTINGS_ERROR_TITLE if 'settings' in str(e) else "Import Error"
+        err_msg = settings.DIALOG_SETTINGS_ERROR_MSG.format(error=e) if 'settings' in str(e) else base_msg
+        messagebox.showerror(err_title, err_msg)
         root.destroy()
     except Exception: pass # Ignore if Tk fails early
     exit()
@@ -42,10 +59,7 @@ except ImportError:
     print('Info: pystray library not found. System tray icon disabled.')
     PYSTRAY_AVAILABLE = False
 
-
-# --- Screenshot Capturer Class ---
-
-
+# --- Screenshot Capturer Class (No changes needed inside this class) ---
 class ScreenshotCapturer:
     """Handles the screen region selection overlay and capturing."""
 
@@ -60,6 +74,7 @@ class ScreenshotCapturer:
 
     def capture_region(self, prompt):
         """Creates a fullscreen transparent window to select a region."""
+        # ... (rest of capture_region remains the same) ...
         print(f"Creating selection window for prompt: '{prompt[:30]}...'")
         self.current_prompt = prompt
 
@@ -82,12 +97,16 @@ class ScreenshotCapturer:
 
         self.selection_window = tk.Toplevel(self.capture_root)
         self.selection_window.attributes('-fullscreen', True)
-        self.selection_window.attributes('-alpha', 0.4) # Transparency
+        self.selection_window.attributes('-alpha', settings.OVERLAY_ALPHA) # Transparency
         self.selection_window.attributes('-topmost', True) # Stay on top
         self.selection_window.overrideredirect(True) # No window border/title
         self.selection_window.update_idletasks() # Ensure drawn before use
 
-        canvas = tk.Canvas(self.selection_window, cursor='cross', bg='gray')
+        canvas = tk.Canvas(
+            self.selection_window,
+            cursor=settings.OVERLAY_CURSOR,
+            bg=settings.OVERLAY_BG_COLOR
+        )
         canvas.pack(fill=tk.BOTH, expand=True)
 
         # --- Event Handlers ---
@@ -98,7 +117,9 @@ class ScreenshotCapturer:
             canvas_x, canvas_y = event.x, event.y
             self.rect_id = canvas.create_rectangle(
                 canvas_x, canvas_y, canvas_x, canvas_y,
-                outline='red', width=2, tags='selection'
+                outline=settings.SELECTION_RECT_COLOR,
+                width=settings.SELECTION_RECT_WIDTH,
+                tags='selection'
             )
 
         def on_mouse_drag(event):
@@ -149,14 +170,15 @@ class ScreenshotCapturer:
                 if prompt_for_ollama is None:
                     print('Error: Prompt was lost before processing. Aborting.')
                     self.app.root.after(
-                        0, messagebox.showerror, 'Internal Error',
-                        'Capture prompt was lost.'
+                        0, messagebox.showerror,
+                        settings.DIALOG_INTERNAL_ERROR_TITLE,
+                        settings.DIALOG_INTERNAL_ERROR_MSG
                     )
                     return
                 try:
                     screenshot = pyautogui.screenshot(region=region_to_capture)
                     print('Screenshot captured. Processing...')
-                    # Pass specific prompt to the processing method via main loop
+                    # Pass screenshot object (PIL Image) directly
                     self.app.root.after(
                         0, self.app.process_screenshot_with_ollama,
                         screenshot, prompt_for_ollama
@@ -165,7 +187,8 @@ class ScreenshotCapturer:
                     error_msg = f'Failed to capture screenshot: {e}'
                     print(f'Screenshot Error: {error_msg}')
                     self.app.root.after(
-                        0, messagebox.showerror, 'Screenshot Error', error_msg
+                        0, messagebox.showerror,
+                        settings.DIALOG_SCREENSHOT_ERROR_TITLE, error_msg
                     )
             else:
                 print('Selection too small or invalid. Screenshot cancelled.')
@@ -207,11 +230,10 @@ class ScreenshotCapturer:
         self.current_prompt = None # Crucial: Reset prompt
 
 
-# --- Formatting Helper ---
-
-
+# --- Formatting Helper (No changes needed) ---
 def apply_formatting_tags(text_widget, text_content, initial_font_size):
     """Applies basic markdown and code block styling using Tkinter tags."""
+    # ... (apply_formatting_tags remains the same) ...
     text_widget.configure(state='normal')
     text_widget.delete('1.0', tk.END)
     text_widget.insert('1.0', text_content)
@@ -233,11 +255,17 @@ def apply_formatting_tags(text_widget, text_content, initial_font_size):
     text_widget.tag_configure(
         'italic', font=(base_family, initial_font_size, 'italic')
     )
-    code_font_size = max(settings.MIN_FONT_SIZE - 1, initial_font_size - 1)
+    # Use offset from settings for code font size calculation
+    code_font_size = max(
+        settings.MIN_FONT_SIZE,
+        initial_font_size + settings.CODE_FONT_SIZE_OFFSET
+    )
     text_widget.tag_configure(
-        'code', background='#f0f0f0',
+        'code', background=settings.CODE_BLOCK_BG_COLOR,
         font=(code_family, code_font_size, 'normal'),
-        wrap=tk.WORD, lmargin1=10, lmargin2=10
+        wrap=tk.WORD,
+        lmargin1=settings.CODE_BLOCK_MARGIN,
+        lmargin2=settings.CODE_BLOCK_MARGIN
     )
 
     # Apply code blocks first (multiline)
@@ -251,10 +279,12 @@ def apply_formatting_tags(text_widget, text_content, initial_font_size):
     inline_patterns = {
         'bold': re.compile(r'\*\*(.*?)\*\*'),
         'italic': re.compile(r'\*(.*?)\*'),
+        # Could add inline code `...` here if needed
     }
     for tag_name, pattern in inline_patterns.items():
         for match in pattern.finditer(text_content):
              start_index_tag = text_widget.index(f'1.0 + {match.start()} chars')
+             # Check if the tag starts *within* an existing code block
              if 'code' not in text_widget.tag_names(start_index_tag):
                  inner_start = text_widget.index(f'1.0 + {match.start(1)} chars')
                  inner_end = text_widget.index(f'1.0 + {match.end(1)} chars')
@@ -264,8 +294,6 @@ def apply_formatting_tags(text_widget, text_content, initial_font_size):
 
 
 # --- Main Application Class ---
-
-
 class ScreenshotApp:
     """Main application class handling UI, events, and Ollama interaction."""
 
@@ -295,54 +323,88 @@ class ScreenshotApp:
                 print(f"Warning: Error loading icon '{settings.ICON_PATH}': {e}."
                       f" Using default.")
                 self.icon_image = self.create_default_icon()
+                # Check if status label exists before updating
+                # Note: _setup_ui might not have run yet, handle potential AttributeError
+                # self.update_status(settings.ICON_LOAD_FAIL_STATUS, settings.STATUS_COLOR_ERROR)
 
-        self._setup_ui()
+        self._setup_ui() # Setup UI after loading icon (or fallback)
 
     def create_default_icon(self):
-        """Creates a simple fallback PIL image icon."""
-        width, height = 64, 64
-        image = Image.new('RGB', (width, height), color='dimgray')
+        """Creates a simple fallback PIL image icon using settings."""
+        # ... (create_default_icon remains the same) ...
+        width = settings.DEFAULT_ICON_WIDTH
+        height = settings.DEFAULT_ICON_HEIGHT
+        image = Image.new('RGB', (width, height), color=settings.DEFAULT_ICON_BG_COLOR)
         d = ImageDraw.Draw(image)
+        margin = 10 # Keep margin calculation simple for now
         d.rectangle(
-            [(10, 10), (width - 10, height - 10)],
-            outline='dodgerblue', width=4
+            [(margin, margin), (width - margin, height - margin)],
+            outline=settings.DEFAULT_ICON_RECT_COLOR,
+            width=settings.DEFAULT_ICON_RECT_WIDTH
         )
         try:
-            # Use a known font if possible for better consistency
-            font = tkFont.Font(family='Arial', size=30, weight='bold')
+            font = tkFont.Font(
+                family=settings.DEFAULT_ICON_FONT_FAMILY,
+                size=settings.DEFAULT_ICON_FONT_SIZE,
+                weight=settings.DEFAULT_ICON_FONT_WEIGHT
+            )
         except tk.TclError:
-            font = tkFont.Font(size=30, weight='bold') # Default fallback
-        d.text((width / 3.5, height / 4), 'S', fill='white', font=font)
+            print(f"Warning: Default icon font '{settings.DEFAULT_ICON_FONT_FAMILY}'"
+                  " not found, using Tk default.")
+            font = tkFont.Font(
+                size=settings.DEFAULT_ICON_FONT_SIZE,
+                weight=settings.DEFAULT_ICON_FONT_WEIGHT
+            ) # Fallback size/weight
+        # Basic text centering approximation
+        text_width, text_height = d.textbbox((0, 0), settings.DEFAULT_ICON_TEXT, font=font)[2:4]
+        text_x = (width - text_width) / 2
+        text_y = (height - text_height) / 2
+        d.text(
+            (text_x, text_y),
+            settings.DEFAULT_ICON_TEXT,
+            fill=settings.DEFAULT_ICON_TEXT_COLOR,
+            font=font
+        )
         return image
 
     def _setup_ui(self):
-        """Configures the main Tkinter window."""
-        self.root.title('Screenshot to Ollama')
-        self.root.geometry('350x200')
-        self.root.resizable(False, False)
+        """Configures the main Tkinter window using settings."""
+        # ... (_setup_ui remains the same) ...
+        self.root.title(settings.APP_TITLE)
+        self.root.geometry(settings.MAIN_WINDOW_GEOMETRY)
+        self.root.resizable(
+            settings.WINDOW_RESIZABLE_WIDTH,
+            settings.WINDOW_RESIZABLE_HEIGHT
+        )
 
-        label = tk.Label(self.root, text='Screenshot Capture & Analysis')
-        label.pack(pady=10)
+        label = tk.Label(self.root, text=settings.MAIN_LABEL_TEXT)
+        label.pack(pady=settings.PADDING_LARGE)
 
-        self.status_label = tk.Label(self.root, text='Initializing...', fg='gray')
-        self.status_label.pack(pady=5)
+        self.status_label = tk.Label(
+            self.root,
+            text=settings.INITIAL_STATUS_TEXT,
+            fg=settings.STATUS_COLOR_DEFAULT
+        )
+        self.status_label.pack(pady=settings.PADDING_SMALL)
 
         # Button uses the default action/prompt from settings
         default_prompt = settings.HOTKEY_ACTIONS[
             settings.DEFAULT_MANUAL_ACTION]['prompt']
         tk.Button(
-            self.root, text='Capture Region Manually',
+            self.root, text=settings.CAPTURE_BUTTON_TEXT,
             command=partial(self._trigger_capture, prompt=default_prompt)
-        ).pack(pady=10)
+        ).pack(pady=settings.PADDING_LARGE)
 
-        exit_text = 'Exit Completely' if PYSTRAY_AVAILABLE else 'Exit'
-        tk.Button(self.root, text=exit_text, command=self.on_exit).pack(pady=5)
+        exit_text = (settings.EXIT_BUTTON_TEXT_TRAY if PYSTRAY_AVAILABLE
+                     else settings.EXIT_BUTTON_TEXT)
+        tk.Button(self.root, text=exit_text, command=self.on_exit).pack(pady=settings.PADDING_SMALL)
 
         close_action = self.hide_to_tray if PYSTRAY_AVAILABLE else self.on_exit
         self.root.protocol('WM_DELETE_WINDOW', close_action)
 
     def _trigger_capture(self, prompt):
         """Safely triggers capture with a specific prompt on main thread."""
+        # ... (_trigger_capture remains the same) ...
         print(f"Triggering capture with prompt: '{prompt[:30]}...'")
         if threading.current_thread() == threading.main_thread():
             self.capturer.capture_region(prompt)
@@ -352,92 +414,105 @@ class ScreenshotApp:
 
     # --- Ollama Interaction ---
     def process_screenshot_with_ollama(self, screenshot: Image.Image, prompt: str):
-        """Encodes screenshot, starts Ollama request in background thread."""
+        """Starts Ollama request in a background thread using ollama_utils."""
+        self.update_status(
+            settings.PROCESSING_STATUS_TEXT, settings.STATUS_COLOR_PROCESSING
+        )
+        # Start the worker thread
+        threading.Thread(
+            target=self._ollama_request_worker,
+            args=(screenshot, prompt),
+            daemon=True
+        ).start()
+
+    def _ollama_request_worker(self, screenshot: Image.Image, prompt: str):
+        """
+        Worker function (runs in background thread) to call ollama_utils
+        and handle results/exceptions, scheduling UI updates.
+        """
         try:
-            buffered = io.BytesIO()
-            screenshot.save(buffered, format='PNG')
-            img_byte = buffered.getvalue()
-            img_base64 = base64.b64encode(img_byte).decode('utf-8')
+            # Call the utility function
+            response_text = ollama_utils.request_ollama_analysis(screenshot, prompt)
+            # Schedule success UI update on main thread
+            self.root.after(0, self.display_ollama_response, response_text)
 
-            threading.Thread(
-                target=self._send_to_ollama_thread,
-                args=(img_base64, prompt),
-                daemon=True
-            ).start()
-            self.update_status('Processing with Ollama...', 'darkorange')
-
-        except Exception as e:
-            error_msg = f'Error preparing image for Ollama: {e}'
-            print(error_msg)
-            self.root.after(0, messagebox.showerror, 'Processing Error', error_msg)
-            self.update_status('Error preparing image.', 'red')
-
-    def _send_to_ollama_thread(self, img_base64: str, prompt: str):
-        """Sends request to Ollama API (runs in background thread)."""
-        payload = {
-            'model': settings.OLLAMA_MODEL,
-            'prompt': prompt, # Use the specific prompt passed in
-            'images': [img_base64],
-            'stream': False
-        }
-        try:
-            print(f'Sending request to: {settings.OLLAMA_URL}')
-            print(f'Using model: {settings.OLLAMA_MODEL}')
-            print(f"Using prompt: '{prompt[:60]}...'")
-            response = requests.post(
-                settings.OLLAMA_URL, json=payload, timeout=120 # 2 min timeout
+        # --- Handle specific Ollama errors ---
+        except OllamaConnectionError as e:
+            error_msg = settings.DIALOG_OLLAMA_CONN_ERROR_MSG.format(url=settings.OLLAMA_URL) # Use setting URL
+            print(f"Ollama Error: {error_msg} - Details: {e}")
+            self.root.after(
+                0, messagebox.showerror,
+                settings.DIALOG_OLLAMA_CONN_ERROR_TITLE, error_msg
             )
-            response.raise_for_status() # Check for HTTP errors
-
-            response_data = response.json()
-            ollama_response_text = response_data.get(
-                'response', 'No response content found in JSON.'
+            self.root.after(
+                0, self.update_status,
+                settings.OLLAMA_CONN_FAILED_STATUS, settings.STATUS_COLOR_ERROR
             )
-            print('Ollama processing complete.')
-            # Schedule UI update back on the main thread
-            self.root.after(0, self.display_ollama_response, ollama_response_text)
+        except OllamaTimeoutError as e:
+            error_msg = settings.DIALOG_OLLAMA_TIMEOUT_MSG.format(url=settings.OLLAMA_URL) # Use setting URL
+            print(f"Ollama Error: {error_msg} - Details: {e}")
+            self.root.after(
+                0, messagebox.showerror,
+                settings.DIALOG_OLLAMA_TIMEOUT_TITLE, error_msg
+            )
+            self.root.after(
+                0, self.update_status,
+                settings.OLLAMA_TIMEOUT_STATUS, settings.STATUS_COLOR_ERROR
+            )
+        except OllamaRequestError as e:
+            # Use the detailed error message from the exception
+            error_msg = f"Ollama API Error: {e.detail or str(e)}"
+            print(f"Ollama Error: {error_msg}")
+            self.root.after(
+                0, messagebox.showerror,
+                settings.DIALOG_OLLAMA_ERROR_TITLE, error_msg
+            )
+            self.root.after(
+                0, self.update_status,
+                settings.OLLAMA_REQUEST_FAILED_STATUS, settings.STATUS_COLOR_ERROR
+            )
+         # --- Handle image encoding error from ollama_utils ---
+        except ValueError as e:
+             error_msg = f"Image Error: {e}"
+             print(error_msg)
+             self.root.after(
+                 0, messagebox.showerror,
+                 settings.DIALOG_PROCESSING_ERROR_TITLE, error_msg # Reuse processing error title
+             )
+             self.root.after(
+                 0, self.update_status,
+                 settings.ERROR_PREPARING_IMAGE_STATUS, settings.STATUS_COLOR_ERROR # Reuse status
+             )
+        # --- Handle other Ollama or unexpected errors ---
+        except (OllamaError, Exception) as e:
+            error_msg = f'Unexpected error during Ollama processing: {e}'
+            print(error_msg)
+            self.root.after(
+                0, messagebox.showerror,
+                settings.DIALOG_UNEXPECTED_ERROR_TITLE, error_msg
+            )
+            self.root.after(
+                0, self.update_status,
+                settings.UNEXPECTED_ERROR_STATUS, settings.STATUS_COLOR_ERROR
+            )
 
-        except requests.exceptions.ConnectionError:
-            error_msg = (f'Connection Error: Could not connect to Ollama at '
-                         f'{settings.OLLAMA_URL}. Is it running?')
-            print(error_msg)
-            self.root.after(0, messagebox.showerror, 'Ollama Connection Error', error_msg)
-            self.root.after(0, self.update_status, 'Ollama connection failed.', 'red')
-        except requests.exceptions.Timeout:
-            error_msg = (f'Timeout: Ollama at {settings.OLLAMA_URL} '
-                         f'took too long.')
-            print(error_msg)
-            self.root.after(0, messagebox.showerror, 'Ollama Timeout', error_msg)
-            self.root.after(0, self.update_status, 'Ollama request timed out.', 'red')
-        except requests.exceptions.RequestException as e:
-            error_msg = f'Ollama Request Error: {e}'
-            detail = ''
-            try:
-                 if e.response is not None:
-                     detail = e.response.json().get('error', str(e))
-                     error_msg = f'Ollama Request Error: {detail}'
-            except (json.JSONDecodeError, AttributeError): pass
-            print(error_msg)
-            self.root.after(0, messagebox.showerror, 'Ollama Error', error_msg)
-            self.root.after(0, self.update_status, 'Ollama request failed.', 'red')
-        except Exception as e:
-            error_msg = f'Unexpected error during Ollama communication: {e}'
-            print(error_msg)
-            self.root.after(0, messagebox.showerror, 'Unexpected Error', error_msg)
-            self.root.after(0, self.update_status, 'Unexpected error.', 'red')
-
-    # --- Response Window ---
+    # --- Response Window (No changes needed) ---
     def display_ollama_response(self, response_text):
         """Displays the Ollama response in a formatted Toplevel window."""
+        # ... (display_ollama_response remains the same) ...
         if self.response_window and self.response_window.winfo_exists():
             self.response_window.destroy()
 
         self.response_window = tk.Toplevel(self.root)
-        self.response_window.title('Ollama Analysis')
-        self.response_window.geometry('700x800')
+        self.response_window.title(settings.RESPONSE_WINDOW_TITLE)
+        self.response_window.geometry(settings.RESPONSE_WINDOW_GEOMETRY)
 
         text_frame = tk.Frame(self.response_window)
-        text_frame.pack(padx=10, pady=(10, 0), fill=tk.BOTH, expand=True)
+        text_frame.pack(
+            padx=settings.RESPONSE_TEXT_PADDING_X,
+            pady=settings.RESPONSE_TEXT_PADDING_Y_TOP,
+            fill=tk.BOTH, expand=True
+        )
 
         txt_area = scrolledtext.ScrolledText(
             text_frame, wrap=tk.WORD, relief=tk.FLAT, bd=0,
@@ -446,7 +521,11 @@ class ScreenshotApp:
         txt_area.pack(fill=tk.BOTH, expand=True)
 
         control_frame = tk.Frame(self.response_window)
-        control_frame.pack(padx=10, pady=5, fill=tk.X)
+        control_frame.pack(
+            padx=settings.RESPONSE_CONTROL_PADDING_X,
+            pady=settings.RESPONSE_CONTROL_PADDING_Y,
+            fill=tk.X
+        )
 
         # --- Slider Callback ---
         def update_font_size(value):
@@ -472,11 +551,16 @@ class ScreenshotApp:
                 txt_area.tag_configure(
                     'italic', font=(base_family, new_size, 'italic')
                 )
-                code_size = max(settings.MIN_FONT_SIZE - 1, new_size - 1)
+                # Use offset for code font size calculation
+                code_size = max(
+                    settings.MIN_FONT_SIZE,
+                    new_size + settings.CODE_FONT_SIZE_OFFSET
+                )
                 txt_area.tag_configure(
                     'code', font=(code_family, code_size, 'normal')
                 )
-                size_label.config(text=f'Size: {new_size}pt')
+                # Update label using format string from settings
+                size_label.config(text=settings.FONT_SIZE_LABEL_FORMAT.format(size=new_size))
             except Exception as e:
                 print(f'Error updating font size: {e}')
 
@@ -488,10 +572,15 @@ class ScreenshotApp:
             command=update_font_size
         )
         font_slider.set(settings.DEFAULT_FONT_SIZE)
-        font_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        font_slider.pack(
+            side=tk.LEFT, fill=tk.X, expand=True,
+            padx=(0, settings.PADDING_LARGE) # Use padding setting
+        )
 
         size_label = tk.Label(
-            control_frame, text=f'Size: {settings.DEFAULT_FONT_SIZE}pt', width=10
+            control_frame,
+            text=settings.FONT_SIZE_LABEL_FORMAT.format(size=settings.DEFAULT_FONT_SIZE),
+            width=settings.FONT_SIZE_LABEL_WIDTH # Use setting
         )
         size_label.pack(side=tk.LEFT)
 
@@ -502,36 +591,46 @@ class ScreenshotApp:
 
         # --- Button Frame ---
         button_frame = tk.Frame(self.response_window)
-        button_frame.pack(pady=(5, 10), fill=tk.X, padx=10)
+        button_frame.pack(
+            pady=settings.RESPONSE_BUTTON_PADDING_Y,
+            fill=tk.X,
+            padx=settings.RESPONSE_BUTTON_PADDING_X
+        )
 
         def copy_to_clipboard():
             raw_text = txt_area.get('1.0', tk.END).strip()
             self.response_window.clipboard_clear()
             self.response_window.clipboard_append(raw_text)
-            copy_button.config(text='Copied!', relief=tk.SUNKEN)
+            copy_button.config(text=settings.COPIED_BUTTON_TEXT, relief=tk.SUNKEN)
             self.response_window.after(
-                2000, lambda: copy_button.config(text='Copy Response', relief=tk.RAISED)
+                settings.COPY_BUTTON_RESET_DELAY_MS, # Use setting
+                lambda: copy_button.config(text=settings.COPY_BUTTON_TEXT, relief=tk.RAISED)
             )
 
         copy_button = tk.Button(
-            button_frame, text='Copy Response', command=copy_to_clipboard
+            button_frame, text=settings.COPY_BUTTON_TEXT, command=copy_to_clipboard
         )
-        copy_button.pack(side=tk.LEFT, padx=5)
+        copy_button.pack(side=tk.LEFT, padx=settings.PADDING_SMALL)
 
         close_button = tk.Button(
-            button_frame, text='Close', command=self.response_window.destroy
+            button_frame, text=settings.CLOSE_BUTTON_TEXT,
+            command=self.response_window.destroy
         )
-        close_button.pack(side=tk.RIGHT, padx=5)
+        close_button.pack(side=tk.RIGHT, padx=settings.PADDING_SMALL)
 
         # --- Window Behavior ---
         self.response_window.transient(self.root) # Keep above main window
         self.response_window.grab_set() # Modal behavior
         self.response_window.focus_force() # Give focus
-        self.update_status('Ready. Hotkeys active or use tray.', 'blue')
+        # Update status after response is shown
+        ready_status = (settings.READY_STATUS_TEXT_TRAY if PYSTRAY_AVAILABLE
+                        else settings.READY_STATUS_TEXT_NO_TRAY)
+        self.update_status(ready_status, settings.STATUS_COLOR_READY)
 
-    # --- Hotkey Listener ---
+    # --- Hotkey Listener (No changes needed) ---
     def start_hotkey_listener(self):
         """Sets up and starts the global hotkey listener using GlobalHotKeys."""
+        # ... (start_hotkey_listener remains the same) ...
         print('Registering hotkeys:')
         hotkey_map = {}
         try:
@@ -554,22 +653,19 @@ class ScreenshotApp:
             print('Hotkey listener thread started.')
 
         except Exception as e:
-            error_msg = (
-                f'Failed to set up hotkey listener: {e}\n\nCommon causes:\n'
-                '- Incorrect hotkey format in settings.py.\n'
-                '- Accessibility/Input permissions missing (macOS/Linux).\n'
-                '- Another app using the same hotkey.'
-            )
+            error_msg = settings.DIALOG_HOTKEY_ERROR_MSG.format(error=e)
             print(f'Error setting up hotkey listener: {e}')
             if self.root and self.root.winfo_exists():
                  self.root.after(
-                    0, messagebox.showerror, 'Hotkey Error', error_msg
+                    0, messagebox.showerror,
+                    settings.DIALOG_HOTKEY_ERROR_TITLE, error_msg
                  )
-            self.update_status('Hotkey listener failed!', 'red')
+            self.update_status(settings.HOTKEY_FAILED_STATUS, settings.STATUS_COLOR_ERROR)
 
-    # --- Status Update Method ---
-    def update_status(self, message, color='blue'):
+    # --- Status Update Method (No changes needed) ---
+    def update_status(self, message, color=settings.STATUS_COLOR_DEFAULT):
         """Updates the status label in the main window (thread-safe)."""
+        # ... (update_status remains the same) ...
         def _update():
             if hasattr(self, 'status_label') and self.status_label.winfo_exists():
                 self.status_label.config(text=message, fg=color)
@@ -581,9 +677,10 @@ class ScreenshotApp:
         else:
              print(f'Status Update (No UI): {message}')
 
-    # --- System Tray Methods ---
+    # --- System Tray Methods (No changes needed) ---
     def setup_tray_icon(self):
-        """Creates and runs the system tray icon."""
+        """Creates and runs the system tray icon using settings."""
+        # ... (setup_tray_icon remains the same) ...
         if not PYSTRAY_AVAILABLE or not self.icon_image:
             print('Info: System tray icon setup skipped.')
             return
@@ -592,21 +689,24 @@ class ScreenshotApp:
             settings.DEFAULT_MANUAL_ACTION]['prompt']
         menu = (
             pystray.MenuItem(
-                'Show Window', self.show_window, default=True,
+                settings.TRAY_SHOW_WINDOW_TEXT, # Use setting
+                self.show_window, default=True,
                 visible=lambda item: not self.root.winfo_viewable()
                          if self.root and self.root.winfo_exists() else False
             ),
             pystray.MenuItem(
-                'Capture Region',
+                settings.TRAY_CAPTURE_TEXT, # Use setting
                 partial(self._trigger_capture, prompt=default_prompt)
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem('Exit', self.on_exit)
+            pystray.MenuItem(settings.TRAY_EXIT_TEXT, self.on_exit) # Use setting
         )
 
         self.tray_icon = pystray.Icon(
-            'screenshot_ollama', self.icon_image,
-            'Screenshot to Ollama', menu
+            settings.TRAY_ICON_NAME, # Use setting
+            self.icon_image,
+            settings.TRAY_TOOLTIP, # Use setting
+            menu
         )
         self.tray_thread = threading.Thread(
             target=self.tray_icon.run, daemon=True
@@ -616,61 +716,67 @@ class ScreenshotApp:
 
     def hide_to_tray(self):
         """Hides the main application window."""
+        # ... (hide_to_tray remains the same) ...
         if self.root and self.root.winfo_exists():
             self.root.withdraw()
             if self.tray_icon:
                 self.tray_icon.update_menu() # Update menu visibility state
-            print('Window hidden to system tray.')
+            print(settings.WINDOW_HIDDEN_STATUS) # Use setting
 
     def show_window(self):
         """Shows the main application window from the system tray."""
+        # ... (show_window remains the same) ...
         def _show():
             if self.root and self.root.winfo_exists():
                  self.root.deiconify(); self.root.lift(); self.root.focus_force()
                  if self.tray_icon:
                      self.tray_icon.update_menu()
-                 print('Window restored from system tray.')
+                 print(settings.WINDOW_RESTORED_STATUS) # Use setting
             else:
                  print('Cannot show window, root does not exist.')
         if self.root:
              self.root.after(0, _show) # Schedule on main thread
 
-    # --- Exit Method ---
+
+    # --- Exit Method (No changes needed) ---
     def on_exit(self):
         """Performs cleanup and exits the application."""
+        # ... (on_exit remains the same) ...
         if not self.running: return # Prevent double-exit
-        print('Exiting application...')
+        print(settings.EXITING_APP_STATUS) # Use setting
         self.running = False
 
         if self.hotkey_listener:
-            print('Stopping hotkey listener...')
+            print(settings.STOPPING_HOTKEYS_STATUS) # Use setting
             try: self.hotkey_listener.stop()
             except Exception as e: print(f'Error stopping hotkey listener: {e}')
         if self.listener_thread and self.listener_thread.is_alive():
             print('Waiting for listener thread to join...')
-            self.listener_thread.join(timeout=1.0)
+            self.listener_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS) # Use setting
 
         if self.tray_icon:
-            print('Stopping system tray icon...')
+            print(settings.STOPPING_TRAY_STATUS) # Use setting
             self.tray_icon.stop()
         if self.tray_thread and self.tray_thread.is_alive():
-             self.tray_thread.join(timeout=1.0)
+             print('Waiting for tray thread to join...')
+             self.tray_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS) # Use setting
 
         if self.root and self.root.winfo_exists():
             print('Destroying main window...')
             self.root.destroy()
 
-        print('Application exit sequence complete.')
+        print(settings.APP_EXIT_COMPLETE_STATUS) # Use setting
 
-    # --- Main Application Execution ---
+    # --- Main Application Execution (No changes needed) ---
     def run(self):
         """Starts listeners, tray icon, and the main Tkinter event loop."""
+        # ... (run remains the same) ...
         self.start_hotkey_listener()
         self.setup_tray_icon()
 
-        status_msg = 'Ready. Hotkeys active'
-        status_msg += ' or use tray.' if PYSTRAY_AVAILABLE else '.'
-        self.update_status(status_msg, 'blue')
+        status_msg = (settings.READY_STATUS_TEXT_TRAY if PYSTRAY_AVAILABLE
+                      else settings.READY_STATUS_TEXT_NO_TRAY)
+        self.update_status(status_msg, settings.STATUS_COLOR_READY)
 
         print('Starting main application loop (Tkinter)...')
         try:
@@ -682,14 +788,13 @@ class ScreenshotApp:
         # Ensure cleanup if mainloop exits for other reasons
         if self.running:
              self.on_exit()
-        print('Screenshot Tool finished.')
+        print(settings.APP_FINISHED_STATUS) # Use setting
 
 
-# --- Main Execution Guard ---
-
-
+# --- Main Execution Guard (No changes needed) ---
 def main():
     """Main function to initialize and run the application."""
+    # ... (main remains the same) ...
     print('Screenshot to Ollama Tool Starting...')
     print(f'Platform: {platform.system()} {platform.release()}')
 
@@ -701,15 +806,13 @@ def main():
                 print(f"Tray icon '{settings.ICON_PATH}' loaded successfully.")
         except FileNotFoundError:
              if not messagebox.askokcancel(
-                 'Icon Warning',
-                 f"Tray icon file '{settings.ICON_PATH}' not found.\n"
-                 f"A default icon will be used. Continue?"
+                 settings.DIALOG_ICON_WARNING_TITLE, # Use setting
+                 settings.DIALOG_ICON_WARNING_MSG.format(path=settings.ICON_PATH) # Use setting
                 ): return
         except Exception as e:
              if not messagebox.askokcancel(
-                 'Icon Error',
-                 f"Error loading tray icon '{settings.ICON_PATH}': {e}\n"
-                 f"A default icon will be used. Continue?"
+                 settings.DIALOG_ICON_ERROR_TITLE, # Use setting
+                 settings.DIALOG_ICON_ERROR_MSG.format(path=settings.ICON_PATH, error=e) # Use setting
                 ): return
 
     app = ScreenshotApp()
