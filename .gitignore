@@ -1,0 +1,7 @@
+__pycache__/
+codebase/
+.env
+venv/
+env
+*.pyc
+codecollect*
