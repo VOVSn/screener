@@ -2,7 +2,7 @@
 
 # --- Ollama Configuration ---
 OLLAMA_URL = 'http://localhost:11434/api/generate'
-OLLAMA_MODEL = 'gemma3:12b'
+OLLAMA_MODEL = 'gemma3:4b'
 OLLAMA_TIMEOUT_SECONDS = 120 # Timeout for the request
 OLLAMA_DEFAULT_ERROR_MSG = 'No response content found in JSON.'
 
