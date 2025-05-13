@@ -22,6 +22,43 @@ HOTKEY_ACTIONS = {} # Populated by load_hotkey_actions()
 DEFAULT_MANUAL_ACTION = 'describe'
 CUSTOM_PROMPT_IDENTIFIER = "CUSTOM_PROMPT_PLACEHOLDER"
 
+# --- UI Text Configuration ---
+UI_TEXTS_FILE = 'ui_texts.json' # New constant for the UI texts file
+UI_TEXTS = {} # Will be populated by load_ui_texts()
+
+def load_ui_texts():
+    """Loads UI texts from the JSON file."""
+    global UI_TEXTS
+    UI_TEXTS = {} # Clear previous texts, if any
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        texts_path = os.path.join(base_dir, UI_TEXTS_FILE)
+
+        with open(texts_path, 'r', encoding='utf-8') as f:
+            loaded_texts = json.load(f)
+
+        # Basic validation
+        if DEFAULT_LANGUAGE not in loaded_texts:
+            raise ValueError(f"Default language '{DEFAULT_LANGUAGE}' not found in '{texts_path}'.")
+        for lang_code in SUPPORTED_LANGUAGES.keys():
+            if lang_code not in loaded_texts:
+                # This is a warning, not a fatal error, as fallbacks will occur.
+                print(f"Warning: Supported language '{lang_code}' not found in '{texts_path}'. Missing translations will fallback to default.")
+        
+        UI_TEXTS = loaded_texts
+        # print(f"UI texts loaded from '{texts_path}'.") # Optional: for debugging
+
+    except FileNotFoundError:
+        # This is a critical error for application startup.
+        raise FileNotFoundError(f"UI texts file '{texts_path}' not found. Application cannot load UI strings.")
+    except json.JSONDecodeError as e:
+        # Critical error, malformed JSON.
+        raise ValueError(f"Error decoding JSON from '{texts_path}': {e}. Check the file for syntax errors.")
+    except Exception as e:
+        # Catch-all for other unexpected errors during loading.
+        raise Exception(f"An unexpected error occurred while loading UI texts from '{texts_path}': {e}")
+
+
 def set_language(new_lang):
     """Sets the application language and reloads language-dependent settings."""
     global LANGUAGE
@@ -29,11 +66,12 @@ def set_language(new_lang):
         LANGUAGE = new_lang
         print(f"Application language changed to: {LANGUAGE} ({SUPPORTED_LANGUAGES[new_lang]})")
         try:
-            load_hotkey_actions(LANGUAGE) # Reload hotkeys with new language prompts
+            # UI_TEXTS are already loaded; T() function handles language switching dynamically.
+            # Reload hotkeys as their prompts/descriptions are localized during their load.
+            load_hotkey_actions(LANGUAGE) 
             return True
         except Exception as e:
             print(f"Error reloading hotkey actions after language change: {e}")
-            # Potentially revert language change or handle error more gracefully
             return False # Indicate failure
     print(f"Warning: Attempted to set unsupported language '{new_lang}'.")
     return False
@@ -41,7 +79,7 @@ def set_language(new_lang):
 def load_hotkey_actions(lang=None):
     """Loads hotkey actions from the JSON file and localizes them."""
     global HOTKEY_ACTIONS
-    current_lang = lang if lang else LANGUAGE # Use provided lang or current global LANGUAGE
+    current_lang = lang if lang else LANGUAGE 
 
     HOTKEY_ACTIONS = {} 
     try:
@@ -65,11 +103,9 @@ def load_hotkey_actions(lang=None):
                 'prompt': localized_prompt,
                 'description': localized_description
             }
-        # print(f"Hotkey actions loaded/reloaded and localized for '{current_lang}'.")
+        # print(f"Hotkey actions loaded/reloaded and localized for '{current_lang}'.") # Optional
 
         if DEFAULT_MANUAL_ACTION not in HOTKEY_ACTIONS:
-            # This check is important. If it fails, the app might not work correctly.
-            # Raise an error that can be caught by the main app for a user message.
             raise ValueError(
                 f"DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' "
                 f"not found in loaded HOTKEY_ACTIONS keys from '{config_path}' for language '{current_lang}'."
@@ -79,164 +115,49 @@ def load_hotkey_actions(lang=None):
         raise FileNotFoundError(f"Hotkey configuration file '{config_path}' not found.")
     except json.JSONDecodeError as e:
         raise ValueError(f"Error decoding JSON from '{config_path}': {e}")
-    except Exception as e: # Catch any other exception during loading
+    except Exception as e: 
         raise Exception(f"Error loading hotkey actions from '{config_path}': {e}")
 
 
-# --- UI Text (Internationalized) ---
-UI_TEXTS = {
-    'en': {
-        'app_title': 'Screenshot to Ollama',
-        'main_label_text': 'Screenshot Capture & Analysis',
-        'capture_button_text': 'Capture Region Manually',
-        'custom_prompt_label': 'Custom Prompt:',
-        'hotkeys_list_label': 'Active Hotkeys:',
-        'exit_button_text': 'Exit',
-        'exit_button_text_tray': 'Exit Completely',
-        'initial_status_text': 'Initializing...',
-        'processing_status_text': 'Processing with Ollama...',
-        'ready_status_text_no_tray': 'Ready. Hotkeys active.',
-        'ready_status_text_tray': 'Ready. Hotkeys active or use tray.',
-        'response_window_title': 'Ollama Analysis',
-        'copy_button_text': 'Copy Response',
-        'copied_button_text': 'Copied!',
-        'close_button_text': 'Close',
-        'font_size_label_format': 'Size: {size}pt',
-        'error_preparing_image_status': 'Error preparing image.',
-        'ollama_conn_failed_status': 'Ollama connection failed.',
-        'ollama_timeout_status': 'Ollama request timed out.',
-        'ollama_request_failed_status': 'Ollama request failed.',
-        'ollama_no_response_content': 'No response content found in JSON.',
-        'unexpected_error_status': 'Unexpected error.',
-        'hotkey_failed_status': 'Hotkey listener failed!',
-        'icon_load_fail_status': "Tray icon failed to load.",
-        'window_hidden_status': 'Window hidden to system tray.',
-        'window_restored_status': 'Window restored from system tray.',
-        'exiting_app_status': 'Exiting application...',
-        'stopping_hotkeys_status': 'Stopping hotkey listener...',
-        'stopping_tray_status': 'Stopping system tray icon...',
-        'app_exit_complete_status': 'Application exit sequence complete.',
-        'app_finished_status': 'Screenshot Tool finished.',
-        'dialog_settings_error_title': 'Settings Error',
-        'dialog_settings_error_msg': 'Error loading settings.py or related files:\n{error}',
-        'dialog_hotkey_json_error_title': 'Hotkey Config Error',
-        'dialog_hotkey_json_error_msg': "Error loading or parsing '{file}':\n{error}",
-        'dialog_screenshot_error_title': 'Screenshot Error',
-        'dialog_internal_error_title': 'Internal Error',
-        'dialog_internal_error_msg': 'Capture prompt was lost or invalid.',
-        'dialog_processing_error_title': 'Processing Error',
-        'dialog_ollama_conn_error_title': 'Ollama Connection Error',
-        'dialog_ollama_conn_error_msg': ('Connection Error: Could not connect to Ollama at '
-                                         '{url}. Is it running?'),
-        'dialog_ollama_timeout_title': 'Ollama Timeout',
-        'dialog_ollama_timeout_msg': ('Timeout: Ollama at {url} took too long.'),
-        'dialog_ollama_error_title': 'Ollama Error',
-        'dialog_unexpected_error_title': 'Unexpected Error',
-        'dialog_hotkey_error_title': 'Hotkey Error',
-        'dialog_hotkey_error_msg': (
-            'Failed to set up hotkey listener: {error}\n\nCommon causes:\n'
-            '- Incorrect hotkey format in hotkeys.json.\n'
-            '- Accessibility/Input permissions missing (macOS/Linux).\n'
-            '- Another app using the same hotkey.'
-        ),
-        'dialog_icon_warning_title': 'Icon Warning',
-        'dialog_icon_warning_msg': ("Tray icon file '{path}' not found.\n"
-                                  "A default icon will be used. Continue?"),
-        'dialog_icon_error_title': 'Icon Error',
-        'dialog_icon_error_msg': ("Error loading tray icon '{path}': {error}\n"
-                                 "A default icon will be used. Continue?"),
-        'tray_show_window_text': 'Show Window',
-        'tray_capture_text': 'Capture Region',
-        'tray_exit_text': 'Exit',
-        'tray_language_text': 'Language', # New
-        'custom_prompt_empty_warning': 'Custom prompt field is empty. Please enter a prompt.',
-        'dialog_warning_title': 'Warning',
-        'status_lang_changed_to': 'Language changed to {lang_name}.', # New
-    },
-    'ru': {
-        'app_title': 'Скриншот в Ollama',
-        'main_label_text': 'Захват и анализ скриншотов',
-        'capture_button_text': 'Захватить область вручную',
-        'custom_prompt_label': 'Свой запрос:',
-        'hotkeys_list_label': 'Активные горячие клавиши:',
-        'exit_button_text': 'Выход',
-        'exit_button_text_tray': 'Выйти полностью',
-        'initial_status_text': 'Инициализация...',
-        'processing_status_text': 'Обработка с Ollama...',
-        'ready_status_text_no_tray': 'Готово. Горячие клавиши активны.',
-        'ready_status_text_tray': 'Готово. Клавиши активны / меню трея.',
-        'response_window_title': 'Анализ от Ollama',
-        'copy_button_text': 'Копировать ответ',
-        'copied_button_text': 'Скопировано!',
-        'close_button_text': 'Закрыть',
-        'font_size_label_format': 'Размер: {size}pt',
-        'error_preparing_image_status': 'Ошибка подготовки изображения.',
-        'ollama_conn_failed_status': 'Ошибка подключения к Ollama.',
-        'ollama_timeout_status': 'Тайм-аут запроса к Ollama.',
-        'ollama_request_failed_status': 'Ошибка запроса к Ollama.',
-        'ollama_no_response_content': 'Содержимое ответа не найдено в JSON.',
-        'unexpected_error_status': 'Непредвиденная ошибка.',
-        'hotkey_failed_status': 'Ошибка слушателя горячих клавиш!',
-        'icon_load_fail_status': "Ошибка загрузки иконки трея.",
-        'window_hidden_status': 'Окно скрыто в системный трей.',
-        'window_restored_status': 'Окно восстановлено из трея.',
-        'exiting_app_status': 'Завершение приложения...',
-        'stopping_hotkeys_status': 'Остановка слушателя горячих клавиш...',
-        'stopping_tray_status': 'Остановка иконки системного трея...',
-        'app_exit_complete_status': 'Последовательность выхода из приложения завершена.',
-        'app_finished_status': 'Инструмент Скриншот закончил работу.',
-        'dialog_settings_error_title': 'Ошибка настроек',
-        'dialog_settings_error_msg': 'Ошибка загрузки settings.py или связанных файлов:\n{error}',
-        'dialog_hotkey_json_error_title': 'Ошибка конфиг. горячих клавиш',
-        'dialog_hotkey_json_error_msg': "Ошибка загрузки или парсинга '{file}':\n{error}",
-        'dialog_screenshot_error_title': 'Ошибка скриншота',
-        'dialog_internal_error_title': 'Внутренняя ошибка',
-        'dialog_internal_error_msg': 'Запрос для захвата был утерян или недействителен.',
-        'dialog_processing_error_title': 'Ошибка обработки',
-        'dialog_ollama_conn_error_title': 'Ошибка подключения Ollama',
-        'dialog_ollama_conn_error_msg': ('Ошибка подключения: Не удалось подключиться к Ollama по адресу '
-                                         '{url}. Он запущен?'),
-        'dialog_ollama_timeout_title': 'Тайм-аут Ollama',
-        'dialog_ollama_timeout_msg': ('Тайм-аут: Ollama по адресу {url} отвечал слишком долго.'),
-        'dialog_ollama_error_title': 'Ошибка Ollama',
-        'dialog_unexpected_error_title': 'Непредвиденная ошибка',
-        'dialog_hotkey_error_title': 'Ошибка горячих клавиш',
-        'dialog_hotkey_error_msg': (
-            'Не удалось настроить слушатель горячих клавиш: {error}\n\nВозможные причины:\n'
-            '- Неверный формат горячей клавиши в hotkeys.json.\n'
-            '- Отсутствуют права доступа (macOS/Linux).\n'
-            '- Другое приложение использует ту же горячую клавишу.'
-        ),
-        'dialog_icon_warning_title': 'Предупреждение об иконке',
-        'dialog_icon_warning_msg': ("Файл иконки трея '{path}' не найден.\n"
-                                  "Будет использована иконка по умолчанию. Продолжить?"),
-        'dialog_icon_error_title': 'Ошибка иконки',
-        'dialog_icon_error_msg': ("Ошибка загрузки иконки трея '{path}': {error}\n"
-                                 "Будет использована иконка по умолчанию. Продолжить?"),
-        'tray_show_window_text': 'Показать окно',
-        'tray_capture_text': 'Захватить область',
-        'tray_exit_text': 'Выход',
-        'tray_language_text': 'Язык', # New
-        'custom_prompt_empty_warning': 'Поле для своего запроса пусто. Пожалуйста, введите запрос.',
-        'dialog_warning_title': 'Предупреждение',
-        'status_lang_changed_to': 'Язык изменен на {lang_name}.', # New
-    }
-}
-
 def T(key, lang=None):
-    """Fetches a localized string. Uses current LANGUAGE if lang is None."""
+    """
+    Fetches a localized string. Uses current global LANGUAGE if lang is None.
+    Fallbacks: Current Lang -> Default Lang -> "<key_name_missing>"
+    """
     current_lang_code = lang if lang else LANGUAGE
-    # Fallback to DEFAULT_LANGUAGE if current_lang_code's texts are missing, then to key itself
-    primary_texts = UI_TEXTS.get(current_lang_code, UI_TEXTS.get(DEFAULT_LANGUAGE, {}))
-    default_texts = UI_TEXTS.get(DEFAULT_LANGUAGE, {})
     
-    text_value = primary_texts.get(key)
-    if text_value is None: # If key not in primary or primary texts missing
-        text_value = default_texts.get(key, f"<{key}>") # Fallback to default lang then key
-    return text_value
+    # Check if UI_TEXTS has been populated. This should always be true after module init.
+    if not UI_TEXTS:
+        # This situation implies a severe failure during settings.py initialization.
+        # Error should have been caught and logged by the initial loading sequence.
+        # screener.py's import error handling for settings.py would likely trigger its own fallback T function.
+        print(f"CRITICAL WARNING: T() called, but UI_TEXTS is empty. Key: '{key}'. Settings initialization likely failed.")
+        return f"<{key} (UI_TEXTS_UNINITIALIZED)>"
+
+    # Try fetching from the specified or current language
+    lang_texts = UI_TEXTS.get(current_lang_code)
+    if lang_texts:
+        text_value = lang_texts.get(key)
+        if text_value is not None:
+            return text_value
+
+    # If not found in current language, try fallback to default language
+    if current_lang_code != DEFAULT_LANGUAGE: # Avoid re-checking if current is already default
+        default_lang_texts = UI_TEXTS.get(DEFAULT_LANGUAGE)
+        if default_lang_texts:
+            text_value = default_lang_texts.get(key)
+            if text_value is not None:
+                # Optional: Log that a fallback to default language occurred.
+                # print(f"Info: UI text key '{key}' not found for lang '{current_lang_code}', used default '{DEFAULT_LANGUAGE}'.")
+                return text_value
+            
+    # If key is not found in either current or default language, return the key itself as a placeholder.
+    # This indicates a missing translation string in ui_texts.json for the given key.
+    # print(f"Warning: UI text key '{key}' not found for language '{current_lang_code}' or default '{DEFAULT_LANGUAGE}'.")
+    return f"<{key}>"
 
 
-# --- UI Style --- (No changes from previous version)
+# --- UI Style --- (Constants remain unchanged)
 MAIN_WINDOW_GEOMETRY = '450x350'
 WINDOW_RESIZABLE_WIDTH = False
 WINDOW_RESIZABLE_HEIGHT = False
@@ -285,13 +206,40 @@ DEFAULT_ICON_TEXT_COLOR = 'white'
 COPY_BUTTON_RESET_DELAY_MS = 2000
 THREAD_JOIN_TIMEOUT_SECONDS = 1.0
 
-# --- Initialize hotkeys with the default language at module load time ---
-# This is crucial so that HOTKEY_ACTIONS is populated before screener.py (or other modules)
-# might try to access it during their own import/initialization phase.
+# --- Initialize configurations at module load time ---
+# These must be populated before other modules (like screener.py) try to access them.
+# Errors here are critical and should be handled by the main application entry point (screener.py).
+
+_initialization_errors = [] # Use a leading underscore to suggest it's for internal module use
+
 try:
+    load_ui_texts() # Load UI texts first, as T() might be used implicitly or explicitly soon.
+except Exception as e:
+    err_msg = f"CRITICAL ERROR during initial settings.load_ui_texts: {e}"
+    print(err_msg)
+    _initialization_errors.append(err_msg)
+    # UI_TEXTS will remain empty or partially filled if an error occurs within load_ui_texts
+    # The T() function has a safeguard for empty UI_TEXTS.
+    # screener.py's import error handling for settings.py is the primary mechanism for user notification.
+
+try:
+    # LANGUAGE should be its default value here unless set otherwise prior to this script execution (e.g. env var)
     load_hotkey_actions(LANGUAGE)
 except Exception as e:
-    print(f"CRITICAL ERROR during initial settings.load_hotkey_actions: {e}")
-    print("Application may not function correctly or will exit if screener.py cannot handle this.")
-    # HOTKEY_ACTIONS will be empty or partially filled. screener.py's error handling
-    # for settings import should catch this scenario if it relies on HOTKEY_ACTIONS.
+    err_msg = f"CRITICAL ERROR during initial settings.load_hotkey_actions: {e}"
+    print(err_msg)
+    _initialization_errors.append(err_msg)
+    # HOTKEY_ACTIONS will be empty or partially filled.
+    # screener.py checks for issues like DEFAULT_MANUAL_ACTION missing.
+
+if _initialization_errors:
+    print("\n" + "="*30 + " SETTINGS INITIALIZATION ERRORS " + "="*30)
+    for _err in _initialization_errors:
+        print(f" - {_err}")
+    print("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ")) )
+    print("Application may not function correctly or will exit if screener.py cannot handle these errors.\n")
+    # It's generally better to let these errors propagate if they are critical,
+    # so that screener.py's try-except block around 'import settings' can catch them
+    # and display a user-friendly error message.
+    # If load_ui_texts or load_hotkey_actions raises an unhandled exception (like FileNotFoundError),
+    # the import of settings.py itself will fail.
