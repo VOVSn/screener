@@ -1,16 +1,37 @@
 # settings.py
 import json
 import os
+import sys # Add sys import
 
-# --- Project Root ---
-# Assumes settings.py is in the project root directory
+# --- Helper functions for path resolution ---
+def get_bundle_dir():
+    """ Get absolute path to the bundle (MEIPASS) or script directory. """
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Running in a PyInstaller bundle (files are in a temporary MEIPASS folder)
+        return sys._MEIPASS
+    else:
+        # Running as a normal script (files are relative to this script)
+        return os.path.dirname(os.path.abspath(__file__))
+
+def get_app_dir():
+    """ Get absolute path to the application directory (where exe or script is). """
+    if getattr(sys, 'frozen', False):
+        # Running in a PyInstaller bundle (sys.executable is the path to the .exe)
+        return os.path.dirname(sys.executable)
+    else:
+        # Running as a normal script (this script's directory)
+        return os.path.dirname(os.path.abspath(__file__))
+
+_BUNDLE_DIR = get_bundle_dir() # For files INSIDE the package (e.g., in _MEIPASS or script dir)
+_APP_DIR = get_app_dir()       # For files NEXT TO the .exe (or script dir)
+
+# --- Project Root (remains for conceptual clarity, but specific paths below are key) ---
 project_root = os.path.dirname(os.path.abspath(__file__))
 
 # --- Load Application Settings from JSON ---
-SETTINGS_FILE_PATH = os.path.join(project_root, 'settings.json')
+# settings.json needs to be user-editable, so it lives next to the .exe or script.
+SETTINGS_FILE_PATH = os.path.join(_APP_DIR, 'settings.json')
 
-# These defaults are used if settings.json is not found, or a specific key is missing.
-# They are aligned with the example settings.json provided in the prompt.
 _DEFAULT_CORE_SETTINGS = {
     "OLLAMA_URL": "http://localhost:11434/api/generate",
     "OLLAMA_MODEL": "gemma3:4b",
@@ -18,7 +39,7 @@ _DEFAULT_CORE_SETTINGS = {
     "DEFAULT_LANGUAGE": "en",
     "DEFAULT_THEME": "dark",
     "DEFAULT_FONT_SIZE": 13,
-    "ICON_FILENAME_PNG": "icon.png"
+    "ICON_FILENAME_PNG": "icon.png" # This filename will be sought in _BUNDLE_DIR
 }
 _app_config = _DEFAULT_CORE_SETTINGS.copy() # Start with defaults
 
@@ -43,13 +64,11 @@ SUPPORTED_LANGUAGES = {
     'en': 'English',
     'ru': 'Русский'
 }
-# Load from _app_config (which got data from settings.json) or use hardcoded default from _DEFAULT_CORE_SETTINGS
 _default_lang_from_config = _app_config.get('DEFAULT_LANGUAGE', _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']).lower()
 DEFAULT_LANGUAGE = _default_lang_from_config if _default_lang_from_config in SUPPORTED_LANGUAGES else _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
 LANGUAGE = DEFAULT_LANGUAGE
 
 # --- Theme Configuration ---
-# Load from _app_config or use hardcoded default from _DEFAULT_CORE_SETTINGS
 _default_theme_from_config = _app_config.get('DEFAULT_THEME', _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']).lower()
 DEFAULT_THEME = _default_theme_from_config if _default_theme_from_config in ['light', 'dark'] else _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']
 CURRENT_THEME = DEFAULT_THEME
@@ -123,20 +142,23 @@ OLLAMA_DEFAULT_ERROR_MSG_KEY = 'ollama_no_response_content'
 
 
 # --- Hotkey Configuration --- (Loaded from hotkeys.json)
-HOTKEYS_CONFIG_FILE = 'hotkeys.json'
+HOTKEYS_CONFIG_FILE_NAME = 'hotkeys.json' # Store only the name
+_HOTKEYS_FULL_PATH = os.path.join(_BUNDLE_DIR, HOTKEYS_CONFIG_FILE_NAME)
+
 HOTKEY_ACTIONS = {}
 DEFAULT_MANUAL_ACTION = 'describe'
 CUSTOM_PROMPT_IDENTIFIER = "CUSTOM_PROMPT_PLACEHOLDER"
 
 # --- UI Text Configuration --- (Loaded from ui_texts.json)
-UI_TEXTS_FILE = 'ui_texts.json'
+UI_TEXTS_FILE_NAME = 'ui_texts.json' # Store only the name
+_UI_TEXTS_FULL_PATH = os.path.join(_BUNDLE_DIR, UI_TEXTS_FILE_NAME)
 UI_TEXTS = {}
 
 def load_ui_texts():
     global UI_TEXTS
     UI_TEXTS = {}
     try:
-        texts_path = os.path.join(project_root, UI_TEXTS_FILE)
+        texts_path = _UI_TEXTS_FULL_PATH
         with open(texts_path, 'r', encoding='utf-8') as f:
             loaded_texts = json.load(f)
         if DEFAULT_LANGUAGE not in loaded_texts:
@@ -155,7 +177,7 @@ def set_language(new_lang):
         LANGUAGE = new_lang
         print(f"Application language changed to: {LANGUAGE} ({SUPPORTED_LANGUAGES[new_lang]})")
         try:
-            load_hotkey_actions(LANGUAGE)
+            load_hotkey_actions(LANGUAGE) # Reload with new language
             if app_instance and hasattr(app_instance, 'apply_theme_globally'):
                  app_instance.apply_theme_globally(language_changed=True)
             return True
@@ -170,7 +192,7 @@ def load_hotkey_actions(lang=None):
     current_lang = lang if lang else LANGUAGE
     HOTKEY_ACTIONS = {}
     try:
-        config_path = os.path.join(project_root, HOTKEYS_CONFIG_FILE)
+        config_path = _HOTKEYS_FULL_PATH
         with open(config_path, 'r', encoding='utf-8') as f:
             raw_actions = json.load(f)
         for action_name, details in raw_actions.items():
@@ -186,7 +208,7 @@ def load_hotkey_actions(lang=None):
                 'description': localized_description
             }
         if DEFAULT_MANUAL_ACTION not in HOTKEY_ACTIONS:
-            raise ValueError(f"DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found.")
+            raise ValueError(f"DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found in '{config_path}'.")
     except FileNotFoundError:
         raise FileNotFoundError(f"Hotkey configuration file '{config_path}' not found.")
     except json.JSONDecodeError as e:
@@ -237,7 +259,6 @@ OVERLAY_BG_COLOR = 'gray'
 SELECTION_RECT_COLOR = 'red'
 SELECTION_RECT_WIDTH = 2
 
-# DEFAULT_FONT_SIZE is now loaded from settings.json (via _app_config) or _DEFAULT_CORE_SETTINGS
 DEFAULT_FONT_SIZE = int(_app_config.get('DEFAULT_FONT_SIZE', _DEFAULT_CORE_SETTINGS['DEFAULT_FONT_SIZE']))
 MIN_FONT_SIZE = 8
 MAX_FONT_SIZE = 17
@@ -245,11 +266,10 @@ CODE_FONT_FAMILY = 'Courier New'
 MIN_SELECTION_WIDTH = 10
 MIN_SELECTION_HEIGHT = 10
 CAPTURE_DELAY = 0.2
-SCREENSHOT_FORMAT = 'PNG' # This remains a hardcoded constant
+SCREENSHOT_FORMAT = 'PNG'
 
-# ICON_PATH is derived from ICON_FILENAME_PNG in settings.json (via _app_config) or _DEFAULT_CORE_SETTINGS
 _icon_filename_from_config = _app_config.get('ICON_FILENAME_PNG', _DEFAULT_CORE_SETTINGS['ICON_FILENAME_PNG'])
-ICON_PATH = os.path.join(project_root, _icon_filename_from_config)
+ICON_PATH = os.path.join(_BUNDLE_DIR, _icon_filename_from_config)
 
 TRAY_ICON_NAME = 'screener_ollama_app'
 DEFAULT_ICON_WIDTH = 64
@@ -266,15 +286,13 @@ COPY_BUTTON_RESET_DELAY_MS = 2000
 THREAD_JOIN_TIMEOUT_SECONDS = 1.0
 
 # --- Initialize configurations ---
-_initialization_errors = []
+_initialization_errors = [] # Store errors for main app to potentially display
 try: load_ui_texts()
-except Exception as e: _initialization_errors.append(f"UI texts: {e}")
+except Exception as e: _initialization_errors.append(f"UI texts ({UI_TEXTS_FILE_NAME}): {e}")
 try: load_hotkey_actions(LANGUAGE) # Load with current language
-except Exception as e: _initialization_errors.append(f"Hotkey actions: {e}")
+except Exception as e: _initialization_errors.append(f"Hotkey actions ({HOTKEYS_CONFIG_FILE_NAME}): {e}")
 
 if _initialization_errors:
     print("="*30 + " SETTINGS INITIALIZATION ERRORS " + "="*30)
     for _err in _initialization_errors: print(f" - {_err}")
-    print("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ")))
-    # The main screener.py may catch import errors from settings.py if they are severe enough
-    # to prevent module loading, and show a dialog. The prints here are for console visibility.
+    print("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ") +2)) # Adjusted length

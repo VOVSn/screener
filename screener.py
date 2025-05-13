@@ -7,12 +7,12 @@ from functools import partial
 import platform
 import time
 
-from PIL import Image
+from PIL import Image # Keep Image import at top level
 from pynput import keyboard
 
 # --- Local Imports ---
 try:
-    import settings
+    import settings # Try to import settings first
     import ollama_utils
     from ollama_utils import (
         OllamaError, OllamaConnectionError, OllamaTimeoutError, OllamaRequestError
@@ -20,12 +20,16 @@ try:
     from capture import ScreenshotCapturer
     import ui_utils
 except (ImportError, FileNotFoundError, ValueError) as e:
+    # This block handles critical failure to import `settings` itself, or if `settings`
+    # raises an error during its own import time (before _initialization_errors is populated).
     err_title = "Initialization Error"
     # Fallback T function and language determination
     try:
+        # Attempt to use settings.T if settings module was partially loaded
+        # or if the error came from a module imported by settings.py
         t_func = settings.T
         lang_for_err = settings.LANGUAGE
-    except (NameError, AttributeError): 
+    except (NameError, AttributeError):
         UI_TEXTS_SUPER_FALLBACK = {
             'en': {
                 'dialog_settings_error_title': 'Settings Error',
@@ -52,34 +56,54 @@ except (ImportError, FileNotFoundError, ValueError) as e:
             return UI_TEXTS_SUPER_FALLBACK.get(chosen_lang, UI_TEXTS_SUPER_FALLBACK['en']).get(k, f"<{k} (super fallback)>")
         t_func = t_func_fallback
 
-    failed_file = "a configuration file" 
+    failed_file = "a configuration file"
+    error_source_module = "settings.py or its direct JSON dependencies (settings.json)"
+
     if isinstance(e, (FileNotFoundError, ValueError)):
-        err_title = t_func('dialog_hotkey_json_error_title', lang_for_err)
-        err_msg_template_str = t_func('dialog_hotkey_json_error_msg', lang_for_err)
-        if hasattr(settings, 'HOTKEYS_CONFIG_FILE') and settings.HOTKEYS_CONFIG_FILE in str(e):
-            failed_file = settings.HOTKEYS_CONFIG_FILE
-        elif hasattr(settings, 'UI_TEXTS_FILE') and settings.UI_TEXTS_FILE in str(e):
-            failed_file = settings.UI_TEXTS_FILE
-        elif "DEFAULT_MANUAL_ACTION" in str(e) or "hotkey" in str(e).lower():
-            failed_file = getattr(settings, 'HOTKEYS_CONFIG_FILE', 'hotkeys.json')
-        elif "ui_texts.json" in str(e): 
-            failed_file = "ui_texts.json"
-        err_msg = err_msg_template_str.format(file=failed_file, error=e)
-    elif 'settings' in str(e).lower() or (isinstance(e, AttributeError) and 'settings' in str(e).lower()):
+        # These errors are often raised by settings.py's load_ui_texts or load_hotkey_actions
+        # if they are called directly at import time of settings.py and fail.
+        # However, our current settings.py structure defers these to after _app_config,
+        # so _initialization_errors should catch them. This block is more for if
+        # a file like settings.json itself causes a JSONDecodeError during _app_config load.
+        err_title = t_func('dialog_hotkey_json_error_title', lang_for_err) # Re-use title
+        err_msg_template_str = t_func('dialog_hotkey_json_error_msg', lang_for_err) # Re-use msg template
+        
+        # Try to determine which file failed based on error string
+        if hasattr(settings, 'HOTKEYS_CONFIG_FILE_NAME') and settings.HOTKEYS_CONFIG_FILE_NAME in str(e):
+            failed_file = settings.HOTKEYS_CONFIG_FILE_NAME
+            error_source_module = settings.HOTKEYS_CONFIG_FILE_NAME
+        elif hasattr(settings, 'UI_TEXTS_FILE_NAME') and settings.UI_TEXTS_FILE_NAME in str(e):
+            failed_file = settings.UI_TEXTS_FILE_NAME
+            error_source_module = settings.UI_TEXTS_FILE_NAME
+        elif "settings.json" in str(e).lower() or (SETTINGS_FILE_PATH and SETTINGS_FILE_PATH in str(e)):
+            failed_file = "settings.json"
+            error_source_module = "settings.json"
+        elif "DEFAULT_MANUAL_ACTION" in str(e) or "hotkey" in str(e).lower(): # From load_hotkey_actions
+            failed_file = getattr(settings, 'HOTKEYS_CONFIG_FILE_NAME', 'hotkeys.json')
+            error_source_module = failed_file
+        
+        err_msg = err_msg_template_str.format(file=error_source_module, error=e)
+
+    elif 'settings' in str(e).lower() or (isinstance(e, AttributeError) and 'settings' in str(e).lower()) or isinstance(e, ImportError) and 'settings' in str(e).lower() :
          err_title = t_func('dialog_settings_error_title', lang_for_err)
          err_msg_template_str = t_func('dialog_settings_error_msg', lang_for_err)
          err_msg = err_msg_template_str.format(file="settings.py or related JSON files", error=e)
     else:
-        module_name = "an unknown module"
+        # Generic import error for other modules if settings.py imported okay
+        module_name = "an essential module"
         if 'ollama_utils' in str(e): module_name = 'ollama_utils.py'
         elif 'capture' in str(e): module_name = 'capture.py'
         elif 'ui_utils' in str(e): module_name = 'ui_utils.py'
-        err_msg = f'A FATAL ERROR occurred: {e}\n\nPlease ensure essential files like \'{module_name}\' are present.'
+        # Use a generic error message as specific file might not be known
+        err_title = t_func('dialog_settings_error_title', lang_for_err) # Re-use
+        err_msg_template_str = t_func('dialog_settings_error_msg', lang_for_err) # Re-use
+        err_msg = err_msg_template_str.format(file=module_name, error=e)
+
 
     print(f"Startup Error: {err_msg}")
     try:
         root_err = tk.Tk(); root_err.withdraw()
-        messagebox.showerror(err_title, err_msg)
+        messagebox.showerror(err_title, err_msg, parent=root_err)
         root_err.destroy()
     except Exception as tk_err:
         print(f"Failed to show Tkinter error dialog during critical startup error: {tk_err}")
@@ -93,13 +117,6 @@ except ImportError:
     PYSTRAY_AVAILABLE = False
 
 
-# RESPONSE_WINDOW_MIN_WIDTH = 400
-# RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES = 5
-# ESTIMATED_CONTROL_FRAME_HEIGHT_PX = 60
-# ESTIMATED_BUTTON_FRAME_HEIGHT_PX = 50
-# ESTIMATED_PADDING_PX = 20
-
-
 class ScreenshotApp:
     def __init__(self):
         self.root = tk.Tk()
@@ -111,7 +128,7 @@ class ScreenshotApp:
         
         self.style = ttk.Style(self.root)
         try:
-            self.style.theme_use('clam')
+            self.style.theme_use('clam') # Or 'alt', 'default', 'classic'
         except tk.TclError:
             print("Warning: ttk theme 'clam' not found. Using default.")
             available_themes = self.style.theme_names()
@@ -125,7 +142,7 @@ class ScreenshotApp:
         self.listener_thread = None
         
         self.response_window = None
-        self.response_text_widget = None # This will be the ScrolledText instance
+        self.response_text_widget = None
         self.response_font_slider = None
         self.response_size_label = None
         self.response_copy_button = None
@@ -133,7 +150,7 @@ class ScreenshotApp:
 
         self.tray_icon = None
         self.tray_thread = None
-        self.icon_image = None
+        self.icon_image = None # This will be PIL.Image object
         self.custom_prompt_var = tk.StringVar()
         self.is_rebuilding_tray = threading.Lock()
         
@@ -147,8 +164,12 @@ class ScreenshotApp:
         self.exit_button = None
         
         if PYSTRAY_AVAILABLE:
-            try: self.icon_image = Image.open(settings.ICON_PATH)
-            except Exception: self.icon_image = ui_utils.create_default_icon()
+            try:
+                # settings.ICON_PATH now correctly points to the bundled location
+                self.icon_image = Image.open(settings.ICON_PATH)
+            except Exception as e:
+                print(f"Warning: Failed to load tray icon from '{settings.ICON_PATH}': {e}. Using default.")
+                self.icon_image = ui_utils.create_default_icon()
         
         self._setup_ui_structure()
         self.apply_theme_globally() 
@@ -175,7 +196,7 @@ class ScreenshotApp:
         self.hotkeys_list_label_widget.pack(anchor=tk.W, pady=(settings.PADDING_SMALL, 0))
         
         self.hotkeys_text_area = tk.Text(main_frame, height=6, wrap=tk.WORD, relief=tk.SOLID, borderwidth=1,
-                                         font=('TkDefaultFont', settings.DEFAULT_FONT_SIZE - 2))
+                                         font=('TkDefaultFont', settings.DEFAULT_FONT_SIZE - 2)) # Use a slightly smaller font
         self.hotkeys_text_area.pack(fill=tk.X, pady=(0, settings.PADDING_SMALL), expand=False)
         
         self.status_label = ttk.Label(main_frame, anchor=tk.W, style='Status.TLabel')
@@ -184,7 +205,7 @@ class ScreenshotApp:
         button_frame = ttk.Frame(main_frame, style='App.TFrame')
         button_frame.pack(fill=tk.X, pady=(settings.PADDING_LARGE, 0), side=tk.BOTTOM)
         
-        self.capture_button = ttk.Button(button_frame, style='App.TButton')
+        self.capture_button = ttk.Button(button_frame, style='App.TButton') # Command set in _update_ui_text
         self.capture_button.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
         self.exit_button = ttk.Button(button_frame, command=lambda: self.on_exit(), style='App.TButton')
@@ -194,12 +215,13 @@ class ScreenshotApp:
         self.root.protocol('WM_DELETE_WINDOW', close_action)
 
     def _apply_theme_to_tk_widget(self, widget, widget_type="tk.Text"):
+        # (Same as your existing _apply_theme_to_tk_widget)
         if not widget or not widget.winfo_exists(): return
 
         is_enabled = widget.cget('state') == tk.NORMAL
         text_bg_color = settings.get_theme_color('text_bg') if is_enabled else settings.get_theme_color('text_disabled_bg')
         text_fg_color = settings.get_theme_color('text_fg')
-        border_color = settings.get_theme_color('code_block_border')
+        border_color = settings.get_theme_color('code_block_border') # For consistency with response window
 
         config_options = {
             'background': text_bg_color,
@@ -207,13 +229,12 @@ class ScreenshotApp:
             'insertbackground': text_fg_color, 
             'selectbackground': settings.get_theme_color('entry_select_bg'),
             'selectforeground': settings.get_theme_color('entry_select_fg'),
+            # For tk.Text (and ScrolledText which embeds it)
+            'highlightthickness': 1, 
+            'highlightbackground': border_color, # Unfocused border
         }
-        
-        # For tk.Text (and ScrolledText which embeds it), highlightthickness and highlightbackground control the border
-        widget.configure(highlightthickness=1, highlightbackground=border_color)
         if is_enabled: # Focused border color
-             widget.configure(highlightcolor=settings.get_theme_color('entry_select_bg'))
-
+             config_options['highlightcolor'] = settings.get_theme_color('entry_select_bg')
 
         try:
             widget.configure(**config_options)
@@ -222,6 +243,7 @@ class ScreenshotApp:
 
 
     def apply_theme_globally(self, language_changed=False):
+        # (Same as your existing apply_theme_globally)
         if self.root_destroyed: return
 
         bg = settings.get_theme_color('app_bg')
@@ -235,13 +257,15 @@ class ScreenshotApp:
         disabled_fg = settings.get_theme_color('disabled_fg')
         frame_bg = settings.get_theme_color('frame_bg')
         scale_trough = settings.get_theme_color('scale_trough')
-        border_color = settings.get_theme_color('code_block_border')
+        border_color = settings.get_theme_color('code_block_border') # General border color for entries/buttons
 
         self.root.configure(background=bg)
 
-        self.style.configure('.', background=bg, foreground=fg, fieldbackground=entry_bg, borderwidth=1)
+        # General style for all ttk widgets
+        self.style.configure('.', background=bg, foreground=fg, fieldbackground=entry_bg, borderwidth=1) # borderwidth for some ttk widgets
+        
         self.style.configure('App.TFrame', background=frame_bg)
-        self.style.configure('App.TLabel', background=frame_bg, foreground=fg)
+        self.style.configure('App.TLabel', background=frame_bg, foreground=fg) # Match TFrame bg
         
         self.style.configure('App.TButton', background=button_bg, foreground=button_fg, bordercolor=border_color,
                              relief=tk.RAISED, lightcolor=button_bg, darkcolor=button_bg, focuscolor=fg)
@@ -254,36 +278,43 @@ class ScreenshotApp:
                              selectbackground=select_bg, selectforeground=select_fg,
                              insertcolor=settings.get_theme_color('entry_fg'), bordercolor=border_color, lightcolor=entry_bg, darkcolor=entry_bg)
         
+        # Style for TScale (font slider)
         self.style.configure('TScale', troughcolor=scale_trough, background=button_bg, sliderrelief=tk.RAISED, borderwidth=1, lightcolor=button_bg, darkcolor=button_bg)
         self.style.map('TScale', background=[('active',button_active_bg)])
 
+        # Status label theming
         current_status_color_key = getattr(self.status_label, '_current_status_color_key', 'status_default_fg') if self.status_label else 'status_default_fg'
         status_fg_color = settings.get_theme_color(current_status_color_key)
-        self.style.configure('Status.TLabel', background=frame_bg, foreground=status_fg_color)
-        if self.status_label: self.status_label.configure(foreground=status_fg_color)
+        self.style.configure('Status.TLabel', background=frame_bg, foreground=status_fg_color) # Match TFrame bg
+        if self.status_label: self.status_label.configure(foreground=status_fg_color) # Direct config for immediate update
 
+        # Theme tk.Text widget (hotkeys_text_area)
         if self.hotkeys_text_area: self._apply_theme_to_tk_widget(self.hotkeys_text_area)
 
+        # Theme response window if it exists
         if self.response_window and self.response_window.winfo_exists():
             self.response_window.configure(background=bg)
+            # Theme child frames in response window
             for child_frame in self.response_window.winfo_children():
                 if isinstance(child_frame, ttk.Frame): child_frame.configure(style='App.TFrame')
             
             if self.response_text_widget: 
-                self._apply_theme_to_tk_widget(self.response_text_widget)
+                self._apply_theme_to_tk_widget(self.response_text_widget) # Theme the tk.Text part
+                # Theme scrollbars of ScrolledText
                 try:
                     for child in self.response_text_widget.winfo_children(): # ScrolledText is a Frame
                         if isinstance(child, ttk.Scrollbar):
-                            child.configure(style='TScrollbar')
-                        elif isinstance(child, tk.Scrollbar):
+                            child.configure(style='TScrollbar') # Apply ttk style
+                        elif isinstance(child, tk.Scrollbar): # Fallback for pure tk.Scrollbar
                              child.config(
                                  background=settings.get_theme_color('scrollbar_bg'),
                                  troughcolor=settings.get_theme_color('scrollbar_trough'),
                                  activebackground=settings.get_theme_color('button_active_bg')
                              )
+                    # Configure the TScrollbar style itself
                     self.style.configure('TScrollbar', troughcolor=settings.get_theme_color('scrollbar_trough'), 
                                          background=settings.get_theme_color('scrollbar_bg'),
-                                         arrowcolor=fg, bordercolor=border_color, relief=tk.FLAT)
+                                         arrowcolor=fg, bordercolor=border_color, relief=tk.FLAT) # arrowcolor might not always work perfectly
                 except (tk.TclError, AttributeError) as e:
                     print(f"Minor issue theming scrollbars in apply_theme_globally: {e}")
 
@@ -292,26 +323,30 @@ class ScreenshotApp:
             if self.response_size_label: self.response_size_label.configure(style='App.TLabel')
             if self.response_copy_button: self.response_copy_button.configure(style='App.TButton')
             
-            if self.response_copy_button: 
+            # Ensure all buttons in response window get styled if they are ttk.Button
+            if self.response_copy_button: # Assuming copy button exists, its master contains other buttons
                 for sibling in self.response_copy_button.master.winfo_children():
                     if isinstance(sibling, ttk.Button): sibling.configure(style='App.TButton')
             
+            # Re-apply formatting tags as colors might have changed
             if self.response_text_widget and self.response_text_widget.winfo_exists():
                 try:
-                    current_text = self.response_text_widget.get("1.0", tk.END) 
+                    current_text = self.response_text_widget.get("1.0", tk.END) # Get current text
                     ui_utils.apply_formatting_tags(self.response_text_widget, current_text, self.current_response_font_size)
-                except (tk.TclError, AttributeError) as e:
+                except (tk.TclError, AttributeError) as e: # Catch if text widget is bad
                      print(f"Minor issue re-applying tags in apply_theme_globally: {e}")
 
 
         if language_changed:
-            self._update_ui_text()
+            self._update_ui_text() # Update all UI texts if language changed
 
+        # Update tray menu if visible (pystray handles checkmark updates on its own mostly)
         if PYSTRAY_AVAILABLE and self.tray_icon and hasattr(self.tray_icon, 'update_menu') and self.tray_icon.visible:
-             self.tray_icon.update_menu()
+             self.tray_icon.update_menu() # This call might be needed if menu item text changes due to language.
         
 
     def _update_ui_text(self):
+        # (Same as your existing _update_ui_text)
         if self.root_destroyed: return
         self.root.title(settings.T('app_title'))
         
@@ -324,17 +359,20 @@ class ScreenshotApp:
             self.hotkeys_text_area.config(state=tk.NORMAL)
             self.hotkeys_text_area.delete('1.0', tk.END)
             hotkey_display_text = []
-            if settings.HOTKEY_ACTIONS:
+            if settings.HOTKEY_ACTIONS: # Check if it's loaded
                 for _, details in settings.HOTKEY_ACTIONS.items():
                     hotkey_display_text.append(f"{details['hotkey']}: {details['description']}")
                 self.hotkeys_text_area.insert(tk.END, "\n".join(hotkey_display_text))
             else:
-                self.hotkeys_text_area.insert(tk.END, settings.T('hotkey_failed_status'))
-            self.hotkeys_text_area.config(state=current_state)
+                # This case should ideally be caught by startup checks, but as a fallback:
+                self.hotkeys_text_area.insert(tk.END, settings.T('hotkey_failed_status')) # Show generic fail
+            self.hotkeys_text_area.config(state=current_state) # tk.DISABLED usually
 
         if self.status_label:
+            # Avoid overwriting specific error/processing messages with "Ready" during language change
             current_text = self.status_label.cget("text")
             is_generic_status_or_change_msg = False
+            # Generate lists of known "safe to overwrite" status messages in all supported languages
             generic_statuses = [settings.T('initial_status_text', lang=lc) for lc in settings.SUPPORTED_LANGUAGES.keys()] + \
                                [settings.T('ready_status_text_no_tray', lang=lc) for lc in settings.SUPPORTED_LANGUAGES.keys()] + \
                                [settings.T('ready_status_text_tray', lang=lc) for lc in settings.SUPPORTED_LANGUAGES.keys()]
@@ -342,27 +380,32 @@ class ScreenshotApp:
             change_prefixes = []
             for template_key in change_msg_templates:
                 for lc in settings.SUPPORTED_LANGUAGES.keys():
-                    prefix = settings.T(template_key, lang=lc).split('{')[0]
+                    prefix = settings.T(template_key, lang=lc).split('{')[0] # Get text before placeholder
                     if prefix: change_prefixes.append(prefix)
             
             if current_text in generic_statuses or any(current_text.startswith(p) for p in change_prefixes if p): # check if p is not empty
                 is_generic_status_or_change_msg = True
 
+            # If status is generic OR it's a "lang/theme changed" message, and we are not *currently* processing a lang/theme change
+            # then reset to "Ready". This avoids "Ready" overwriting an important error message just due to a settings load.
             if is_generic_status_or_change_msg and not (hasattr(self, '_theme_just_changed') and self._theme_just_changed) \
                and not (hasattr(self, '_lang_just_changed') and self._lang_just_changed):
                 ready_key = 'ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
                 self.update_status(settings.T(ready_key), 'status_ready_fg')
             
+            # Clear temporary flags
             if hasattr(self, '_theme_just_changed'): del self._theme_just_changed
             if hasattr(self, '_lang_just_changed'): del self._lang_just_changed
 
         if self.capture_button:
             self.capture_button.config(text=settings.T('capture_button_text'))
+            # Determine the prompt for the manual capture button
             default_manual_action_details = settings.HOTKEY_ACTIONS.get(settings.DEFAULT_MANUAL_ACTION)
-            prompt_for_button = settings.T('ollama_no_response_content') 
+            prompt_for_button = settings.T('ollama_no_response_content') # Fallback if something is wrong
             if default_manual_action_details:
                 prompt_for_button = default_manual_action_details['prompt']
                 if prompt_for_button == settings.CUSTOM_PROMPT_IDENTIFIER:
+                    # If default is custom, fallback to 'describe' for button if custom is empty
                     describe_action = settings.HOTKEY_ACTIONS.get('describe', {})
                     prompt_for_button = describe_action.get('prompt', "Describe (fallback prompt)")
             self.capture_button.config(command=lambda p=prompt_for_button: self._trigger_capture_from_ui(p))
@@ -371,45 +414,72 @@ class ScreenshotApp:
             exit_key = 'exit_button_text_tray' if PYSTRAY_AVAILABLE else 'exit_button_text'
             self.exit_button.config(text=settings.T(exit_key))
 
+        # Update response window texts if open
+        if self.response_window and self.response_window.winfo_exists():
+            self.response_window.title(settings.T('response_window_title'))
+            if self.response_size_label:
+                self.response_size_label.config(text=settings.T('font_size_label_format').format(size=self.current_response_font_size))
+            if self.response_copy_button:
+                 # Check if it's showing "Copied!" or the normal text
+                if self.response_copy_button.cget('text') != settings.T('copied_button_text', lang=settings.DEFAULT_LANGUAGE): # Compare with a fixed lang if needed
+                    self.response_copy_button.config(text=settings.T('copy_button_text'))
+            # Find the close button and update its text
+            # This assumes the close button is a direct child of the copy button's master (button_frame_resp)
+            if self.response_copy_button and self.response_copy_button.master:
+                for widget in self.response_copy_button.master.winfo_children():
+                    if isinstance(widget, ttk.Button) and widget != self.response_copy_button: # Assuming it's the other button
+                        widget.config(text=settings.T('close_button_text'))
+                        break
+    
     def _get_prompt_for_action(self, prompt_source):
+        # (Same as your existing _get_prompt_for_action)
         if self.root_destroyed: return None
         if prompt_source == settings.CUSTOM_PROMPT_IDENTIFIER:
             custom_prompt = self.custom_prompt_var.get().strip()
             if not custom_prompt:
-                if not self.root_destroyed and self.root and self.root.winfo_exists():
+                if not self.root_destroyed and self.root and self.root.winfo_exists(): # Check root still exists
                     messagebox.showwarning(settings.T('dialog_warning_title'), settings.T('custom_prompt_empty_warning'), parent=self.root)
                 return None
             return custom_prompt
         elif isinstance(prompt_source, str):
             return prompt_source
-        else: 
+        else: # Should not happen if hotkeys.json is valid
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 messagebox.showerror(settings.T('dialog_internal_error_title'), settings.T('dialog_internal_error_msg'), parent=self.root)
             return None
 
     def _trigger_capture_from_ui(self, prompt_source):
+        # (Same as your existing _trigger_capture_from_ui)
         if self.root_destroyed: return
         self._trigger_capture(prompt_source)
 
-    def _trigger_capture(self, prompt_source, icon=None, item=None):
+    def _trigger_capture(self, prompt_source, icon=None, item=None): # Tray args included
+        # (Same as your existing _trigger_capture)
         if self.root_destroyed: return
         actual_prompt = self._get_prompt_for_action(prompt_source)
         if actual_prompt is None:
+            # If prompt failed (e.g. custom prompt empty), reset status
             ready_key = 'ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
             self.update_status(settings.T(ready_key), 'status_ready_fg')
             return
-        if self.root and self.root.winfo_viewable():
-            self.root.withdraw()
+        
+        if self.root and self.root.winfo_viewable(): # If main window is visible
+            self.root.withdraw() # Hide main window before capture
+            # Delay capture slightly to ensure window is hidden
             self.root.after(100, lambda: self.capturer.capture_region(actual_prompt))
-        else:
+        else: # Main window is already hidden or not primary
             self.capturer.capture_region(actual_prompt)
 
+
     def process_screenshot_with_ollama(self, screenshot: Image.Image, prompt: str):
+        # (Same as your existing process_screenshot_with_ollama)
         if self.root_destroyed: return
+
+        # If window was hidden ONLY for capture, and tray is active, consider showing it.
+        # This needs careful state management to distinguish from explicit "hide to tray".
         if self.root and not self.root.winfo_viewable() and PYSTRAY_AVAILABLE : # Only show if hidden by tray logic
             # Check if the window was hidden by capture logic or by explicit hide_to_tray
-            # This logic might need refinement based on how `hide_to_tray` sets state
-             if not getattr(self, '_explicitly_hidden_to_tray', False):
+             if not getattr(self, '_explicitly_hidden_to_tray', False): # Check flag set by hide_to_tray
                   self.show_window()
 
 
@@ -417,58 +487,66 @@ class ScreenshotApp:
         threading.Thread(target=self._ollama_request_worker, args=(screenshot, prompt), daemon=True).start()
 
     def _ollama_request_worker(self, screenshot: Image.Image, prompt: str):
+        # (Same as your existing _ollama_request_worker)
         if self.root_destroyed: return
         try:
             response_text = ollama_utils.request_ollama_analysis(screenshot, prompt)
+            # Schedule UI updates on the main thread
             self.update_status_safe(settings.T('ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'), 'status_ready_fg')
-            if not self.root_destroyed and self.root and self.root.winfo_exists():
+            if not self.root_destroyed and self.root and self.root.winfo_exists(): # Check root still exists
                 self.root.after(0, self.display_ollama_response, response_text)
         except OllamaConnectionError as e:
             msg = f"{settings.T('ollama_conn_failed_status')}: {e}"
             self.update_status_safe(msg, 'status_error_fg')
+            # Consider showing a dialog for critical errors if desired
+            # self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_conn_error_title'), settings.T('dialog_ollama_conn_error_msg').format(url=settings.OLLAMA_URL))
         except OllamaTimeoutError as e:
             msg = f"{settings.T('ollama_timeout_status')}: {e}"
             self.update_status_safe(msg, 'status_error_fg')
-        except OllamaRequestError as e:
+        except OllamaRequestError as e: # Catches API errors with status/detail
             msg = f"{settings.T('ollama_request_failed_status')} (Code: {e.status_code}, Detail: {e.detail})"
             self.update_status_safe(msg, 'status_error_fg')
-        except OllamaError as e:
-            msg = f"{settings.T('ollama_request_failed_status')}: {e}"
+        except OllamaError as e: # Generic Ollama lib error
+            msg = f"{settings.T('ollama_request_failed_status')}: {e}" # Or a more generic key
             self.update_status_safe(msg, 'status_error_fg')
-        except ValueError as e: 
+        except ValueError as e: # e.g., image encoding error before request
             msg = f"{settings.T('error_preparing_image_status')}: {e}"
             self.update_status_safe(msg, 'status_error_fg')
-        except Exception as e:
-            print(f"Unexpected Ollama worker error: {e}")
+        except Exception as e: # Catch-all for unexpected issues
+            print(f"Unexpected Ollama worker error: {e}") # Log to console
             self.update_status_safe(settings.T('unexpected_error_status'), 'status_error_fg')
 
 
     def display_ollama_response(self, response_text):
+        # (Same as your existing display_ollama_response)
         if self.root_destroyed: return
         if self.response_window and self.response_window.winfo_exists():
             try: self.response_window.destroy()
-            except tk.TclError: pass
+            except tk.TclError: pass # If already destroyed
         
-        if not self.root or not self.root.winfo_exists(): return
+        if not self.root or not self.root.winfo_exists(): return # Main window gone
 
         self.response_window = tk.Toplevel(self.root)
         self.response_window.title(settings.T('response_window_title'))
         self.response_window.geometry(settings.RESPONSE_WINDOW_GEOMETRY)
-        self.response_window.configure(background=settings.get_theme_color('app_bg'))
+        self.response_window.configure(background=settings.get_theme_color('app_bg')) # Theme background
 
-        text_frame = ttk.Frame(self.response_window, style='App.TFrame')
+        # Main frame for text area
+        text_frame = ttk.Frame(self.response_window, style='App.TFrame') # Themed frame
         
+        # ScrolledText for the response
         self.response_text_widget = scrolledtext.ScrolledText(
-            text_frame, wrap=tk.WORD, relief=tk.FLAT, bd=0,
+            text_frame, wrap=tk.WORD, relief=tk.FLAT, bd=0, # bd=0 and relief=FLAT common for modern look
             font=('TkDefaultFont', self.current_response_font_size),
-            height=settings.RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES
+            height=settings.RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES # Initial hint
         )
-        self._apply_theme_to_tk_widget(self.response_text_widget)
+        self._apply_theme_to_tk_widget(self.response_text_widget) # Apply text widget specific theme
+        # Theme scrollbars after text widget is created
         try:
             for child in self.response_text_widget.winfo_children():
                 if isinstance(child, ttk.Scrollbar):
                     child.configure(style='TScrollbar')
-                elif isinstance(child, tk.Scrollbar):
+                elif isinstance(child, tk.Scrollbar): # tk.Scrollbar fallback
                     child.config(
                         background=settings.get_theme_color('scrollbar_bg'),
                         troughcolor=settings.get_theme_color('scrollbar_trough'),
@@ -478,305 +556,414 @@ class ScreenshotApp:
             print(f"Minor issue theming scrollbars in display_ollama_response: {e}")
 
 
-        control_frame = ttk.Frame(self.response_window, style='App.TFrame')
+        # Frame for font controls
+        control_frame = ttk.Frame(self.response_window, style='App.TFrame') # Themed frame
         
         def update_font_size_display_themed(size_val_str):
             if self.root_destroyed: return
             try:
-                new_size = int(float(size_val_str))
-                if not (settings.MIN_FONT_SIZE <= new_size <= settings.MAX_FONT_SIZE): return
+                new_size = int(float(size_val_str)) # Slider gives float string
+                if not (settings.MIN_FONT_SIZE <= new_size <= settings.MAX_FONT_SIZE): return # Validate
                 self.current_response_font_size = new_size
-                if self.response_size_label and self.response_size_label.winfo_exists():
+                if self.response_size_label and self.response_size_label.winfo_exists(): # Update label
                     self.response_size_label.config(text=settings.T('font_size_label_format').format(size=new_size))
                 
-                text_w = self.response_text_widget 
-                if text_w and text_w.winfo_exists(): 
-                    base_font_obj = tkFont.Font(font=text_w['font'])
-                    base_font_obj.configure(size=new_size)
-                    text_w.configure(font=base_font_obj)
-                    ui_utils.apply_formatting_tags(text_w, response_text, new_size)
-            except (ValueError, tk.TclError, AttributeError): pass
+                text_w = self.response_text_widget # Alias for clarity
+                if text_w and text_w.winfo_exists(): # Update font in text widget
+                    base_font_obj = tkFont.Font(font=text_w['font']) # Get current font object
+                    base_font_obj.configure(size=new_size) # Change its size
+                    text_w.configure(font=base_font_obj) # Apply back
+                    # Re-apply markdown tags with new font size for correct rendering
+                    ui_utils.apply_formatting_tags(text_w, response_text, new_size) # Pass original full text
+            except (ValueError, tk.TclError, AttributeError): pass # Ignore errors during font update
 
         self.response_font_slider = ttk.Scale(control_frame, from_=settings.MIN_FONT_SIZE, to=settings.MAX_FONT_SIZE, 
                                        orient=tk.HORIZONTAL, value=self.current_response_font_size,
-                                       command=update_font_size_display_themed, style='TScale')
+                                       command=update_font_size_display_themed, style='TScale') # Themed scale
         self.response_font_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, settings.PADDING_LARGE))
         
         self.response_size_label = ttk.Label(control_frame, text=settings.T('font_size_label_format').format(size=self.current_response_font_size),
-                                      width=settings.FONT_SIZE_LABEL_WIDTH, style='App.TLabel')
+                                      width=settings.FONT_SIZE_LABEL_WIDTH, style='App.TLabel') # Themed label
         self.response_size_label.pack(side=tk.LEFT)
 
-        button_frame_resp = ttk.Frame(self.response_window, style='App.TFrame')
+        # Frame for action buttons (Copy, Close)
+        button_frame_resp = ttk.Frame(self.response_window, style='App.TFrame') # Themed frame
         
         def copy_to_clipboard_command_themed():
             if self.root_destroyed or not (self.response_window and self.response_window.winfo_exists()): return
-            raw_text_content = self.response_text_widget.get('1.0', tk.END).strip()
+            raw_text_content = self.response_text_widget.get('1.0', tk.END).strip() # Get raw text
             try:
                 self.response_window.clipboard_clear()
                 self.response_window.clipboard_append(raw_text_content)
-                if self.response_copy_button and self.response_copy_button.winfo_exists():
-                    self.response_copy_button.config(text=settings.T('copied_button_text'))
+                if self.response_copy_button and self.response_copy_button.winfo_exists(): # Check button exists
+                    original_text = settings.T('copy_button_text')
+                    copied_text = settings.T('copied_button_text')
+                    self.response_copy_button.config(text=copied_text)
+                    # Schedule reset back to original text, ensuring button still exists
                     if self.response_window and self.response_window.winfo_exists():
                         self.response_window.after(settings.COPY_BUTTON_RESET_DELAY_MS, 
-                            lambda: self.response_copy_button.config(text=settings.T('copy_button_text')) if self.response_copy_button and self.response_copy_button.winfo_exists() else None)
-            except tk.TclError as e:
+                            lambda: self.response_copy_button.config(text=original_text) if self.response_copy_button and self.response_copy_button.winfo_exists() else None)
+            except tk.TclError as e: # Handle clipboard errors (rare on Windows)
                 if not self.root_destroyed and self.response_window and self.response_window.winfo_exists():
                     messagebox.showerror(settings.T('dialog_internal_error_title'), f"{settings.T('unexpected_error_status')}: {e}", parent=self.response_window)
 
         self.response_copy_button = ttk.Button(button_frame_resp, text=settings.T('copy_button_text'),
-                                          command=copy_to_clipboard_command_themed, style='App.TButton')
+                                          command=copy_to_clipboard_command_themed, style='App.TButton') # Themed button
         self.response_copy_button.pack(side=tk.LEFT, padx=settings.PADDING_SMALL)
         
-        close_button_resp = ttk.Button(button_frame_resp, text=settings.T('close_button_text'), style='App.TButton',
+        close_button_resp = ttk.Button(button_frame_resp, text=settings.T('close_button_text'), style='App.TButton', # Themed button
                                    command=lambda: self.response_window.destroy() if self.response_window and self.response_window.winfo_exists() else None)
         close_button_resp.pack(side=tk.RIGHT, padx=settings.PADDING_SMALL)
 
-        self.response_window.update_idletasks()
+        # Calculate minsize after widgets are created
+        self.response_window.update_idletasks() # Ensure widgets dimensions are calculated
         font_for_metrics = tkFont.Font(font=self.response_text_widget['font'])
-        line_height_px = font_for_metrics.metrics("linespace")
+        line_height_px = font_for_metrics.metrics("linespace") # Height of one line
         min_text_area_height_px = settings.RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES * line_height_px
+        # Estimate total height needed for controls and padding
         min_total_height = int(min_text_area_height_px + settings.ESTIMATED_CONTROL_FRAME_HEIGHT_PX + \
-                               settings.ESTIMATED_BUTTON_FRAME_HEIGHT_PX + settings.ESTIMATED_PADDING_PX * 3) 
+                               settings.ESTIMATED_BUTTON_FRAME_HEIGHT_PX + settings.ESTIMATED_PADDING_PX * 3) # Top, between, bottom
         self.response_window.minsize(settings.RESPONSE_WINDOW_MIN_WIDTH, min_total_height)
 
+        # Pack frames into the response window
         text_frame.pack(padx=settings.RESPONSE_TEXT_PADDING_X, pady=settings.RESPONSE_TEXT_PADDING_Y_TOP, fill=tk.BOTH, expand=True)
-        self.response_text_widget.pack(fill=tk.BOTH, expand=True)
+        self.response_text_widget.pack(fill=tk.BOTH, expand=True) # Text widget fills its frame
         control_frame.pack(padx=settings.RESPONSE_CONTROL_PADDING_X, pady=settings.RESPONSE_CONTROL_PADDING_Y, fill=tk.X)
         button_frame_resp.pack(pady=settings.RESPONSE_BUTTON_PADDING_Y, fill=tk.X, padx=settings.RESPONSE_BUTTON_PADDING_X)
 
+        # Apply Markdown formatting to the response text
         ui_utils.apply_formatting_tags(self.response_text_widget, response_text, self.current_response_font_size)
 
-        if self.response_window and self.response_window.winfo_exists():
-            self.response_window.transient(self.root)
-            self.response_window.grab_set()
-            self.response_window.focus_force()
+        # Make response window modal and focused
+        if self.response_window and self.response_window.winfo_exists(): # Check again
+            self.response_window.transient(self.root) # Show above main window
+            self.response_window.grab_set() # Modal behavior
+            self.response_window.focus_force() # Grab focus
         
+        # Update main status after response is displayed
         self.update_status(settings.T('ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'), 'status_ready_fg')
 
     def update_status(self, message, color_key='status_default_fg'):
+        # (Same as your existing update_status)
         if self.root_destroyed: return
-        def _update():
+        def _update(): # Closure to run on main thread
             if not self.root_destroyed and hasattr(self, 'status_label') and self.status_label and self.status_label.winfo_exists():
                 color = settings.get_theme_color(color_key)
                 self.status_label.config(text=message, foreground=color)
-                setattr(self.status_label, '_current_status_color_key', color_key)
+                setattr(self.status_label, '_current_status_color_key', color_key) # Store key for theme changes
+                # Ensure the style for Status.TLabel is also updated if it hasn't been
                 self.style.configure('Status.TLabel', foreground=color, background=settings.get_theme_color('frame_bg'))
-        if self.root and self.root.winfo_exists():
-            self.root.after(0, _update)
+        if self.root and self.root.winfo_exists(): # Check if root exists before scheduling
+            self.root.after(0, _update) # Schedule on main Tkinter thread
             
     def update_status_safe(self, message, color_key='status_default_fg'):
+        # (Same as your existing update_status_safe)
         if self.root_destroyed: return
-        if self.root and self.root.winfo_exists():
-            self.root.after(0, self.update_status, message, color_key)
+        if self.root and self.root.winfo_exists(): # Check root exists
+            self.root.after(0, self.update_status, message, color_key) # Use self.update_status
 
     def _build_tray_menu(self):
-        if self.root_destroyed: return tuple()
+        # (Same as your existing _build_tray_menu)
+        if self.root_destroyed or not PYSTRAY_AVAILABLE: return tuple() # Return empty tuple if no tray
         
+        # Language Submenu
         lang_submenu_items = []
         for code, name in settings.SUPPORTED_LANGUAGES.items():
+            # Use partial to pass current 'code' to the action and checker
             action = partial(self.change_language, code) 
             item = pystray.MenuItem(name, action,
-                checked=lambda item_param, current_code_param=code: settings.LANGUAGE == current_code_param,
+                checked=lambda item_param, current_code_param=code: settings.LANGUAGE == current_code_param, # Lambda captures current_code_param
                 radio=True)
             lang_submenu_items.append(item)
 
+        # Theme Submenu
         theme_submenu_items = [
             pystray.MenuItem(
                 settings.T('tray_theme_light_text'),
-                partial(self.change_theme, 'light'),
-                checked=lambda item: settings.CURRENT_THEME == 'light', radio=True ),
+                partial(self.change_theme, 'light'), # Action
+                checked=lambda item: settings.CURRENT_THEME == 'light', radio=True # Checker
+            ),
             pystray.MenuItem(
                 settings.T('tray_theme_dark_text'),
-                partial(self.change_theme, 'dark'),
-                checked=lambda item: settings.CURRENT_THEME == 'dark', radio=True )
+                partial(self.change_theme, 'dark'), # Action
+                checked=lambda item: settings.CURRENT_THEME == 'dark', radio=True # Checker
+            )
         ]
         
+        # Determine prompt for "Capture Region" tray item
         default_manual_action_details = settings.HOTKEY_ACTIONS.get(settings.DEFAULT_MANUAL_ACTION)
-        tray_capture_prompt = settings.T('ollama_no_response_content') 
+        tray_capture_prompt = settings.T('ollama_no_response_content') # Fallback
         if default_manual_action_details:
             tray_capture_prompt = default_manual_action_details['prompt']
             if tray_capture_prompt == settings.CUSTOM_PROMPT_IDENTIFIER:
+                # If default is custom, fallback to 'describe' for tray item
                 describe_action = settings.HOTKEY_ACTIONS.get('describe', {})
                 tray_capture_prompt = describe_action.get('prompt', "Describe (tray fallback)")
 
         menu_items = [
-            pystray.MenuItem(settings.T('tray_show_window_text'), self.show_window, default=True,
-                             visible=lambda item: not self.root_destroyed and self.root and self.root.winfo_exists() and not self.root.winfo_viewable()),
+            pystray.MenuItem(settings.T('tray_show_window_text'), self.show_window, default=True, # Default action on left-click
+                             visible=lambda item: not self.root_destroyed and self.root and self.root.winfo_exists() and not self.root.winfo_viewable()), # Only visible if window is hidden
             pystray.MenuItem(settings.T('tray_capture_text'), partial(self._trigger_capture, prompt_source=tray_capture_prompt)),
             pystray.MenuItem(settings.T('tray_language_text'), pystray.Menu(*lang_submenu_items)),
             pystray.MenuItem(settings.T('tray_theme_text'), pystray.Menu(*theme_submenu_items)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(settings.T('tray_exit_text'), lambda: self.on_exit(from_tray=True))
+            pystray.MenuItem(settings.T('tray_exit_text'), lambda: self.on_exit(from_tray=True)) # Explicit exit
         ]
         return tuple(menu_items)
 
     def _request_rebuild_tray_icon_from_main_thread(self):
+        # (Same as your existing _request_rebuild_tray_icon_from_main_thread)
         if self.root_destroyed: return
+        # Schedule the rebuild on the main Tkinter thread
         if self.root and self.root.winfo_exists() and PYSTRAY_AVAILABLE:
-            self.root.after(100, self._rebuild_tray_icon_on_main_thread)
+            self.root.after(100, self._rebuild_tray_icon_on_main_thread) # Small delay
 
     def _rebuild_tray_icon_on_main_thread(self):
+        # (Same as your existing _rebuild_tray_icon_on_main_thread)
         if self.root_destroyed or not PYSTRAY_AVAILABLE: return
-        if not self.is_rebuilding_tray.acquire(blocking=False): return
+        
+        if not self.is_rebuilding_tray.acquire(blocking=False):
+            print("Tray rebuild already in progress or lock couldn't be acquired.")
+            return # Avoid concurrent rebuilds
+
         try:
             old_tray_instance = self.tray_icon
-            old_tray_thread = self.tray_thread
+            old_tray_thread = self.tray_thread # Keep track of the old thread
 
+            # Stop the old tray icon if it exists
             if old_tray_instance:
-                old_tray_instance.stop() 
+                print("Stopping old tray icon...")
+                old_tray_instance.stop() # Signal pystray to stop
                 self.tray_icon = None
             
+            # Join the old tray thread to ensure it exits cleanly
             if old_tray_thread and old_tray_thread.is_alive():
-                pass 
+                print("Joining old tray thread...")
+                old_tray_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS)
+                if old_tray_thread.is_alive():
+                    print("Warning: Old tray thread did not exit in time.")
             self.tray_thread = None
 
+            # Build the new menu
             new_menu = self._build_tray_menu()
-            if not new_menu : 
+            if not new_menu : # Should not happen if PYSTRAY_AVAILABLE is true
+                print("Warning: Tray menu could not be built during rebuild.")
                 self.is_rebuilding_tray.release(); return
 
+            # Create and run the new tray icon
+            if not self.icon_image: # Ensure icon_image is loaded
+                 self.icon_image = Image.open(settings.ICON_PATH) if os.path.exists(settings.ICON_PATH) else ui_utils.create_default_icon()
+
+            print("Creating new tray icon instance...")
             self.tray_icon = pystray.Icon(settings.TRAY_ICON_NAME, self.icon_image, settings.T('app_title'), new_menu)
+            
+            print("Starting new tray thread...")
             self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True, name="PystrayThread")
             self.tray_thread.start()
-        except Exception as e: print(f"Exception during tray rebuild: {e}")
-        finally: self.is_rebuilding_tray.release()
+            print("New tray icon started.")
+
+        except Exception as e:
+            print(f"Exception during tray rebuild: {e}")
+            # Fallback: try to ensure at least some tray functionality or clear state
+            if self.tray_icon: self.tray_icon.stop(); self.tray_icon = None
+            if self.tray_thread and self.tray_thread.is_alive(): self.tray_thread.join(0.1)
+            self.tray_thread = None
+        finally:
+            self.is_rebuilding_tray.release()
 
 
     def setup_tray_icon(self):
-        if self.root_destroyed or not PYSTRAY_AVAILABLE or not self.icon_image: return
+        # (Same as your existing setup_tray_icon)
+        if self.root_destroyed or not PYSTRAY_AVAILABLE or not self.icon_image:
+            if not PYSTRAY_AVAILABLE: print("Pystray not available, skipping tray setup.")
+            if not self.icon_image: print("Icon image not loaded, skipping tray setup.")
+            return
+        # Initial tray setup should also use the main thread logic for consistency
         self._rebuild_tray_icon_on_main_thread()
 
-    def change_theme(self, theme_name, icon=None, item=None):
-        if self.root_destroyed: return
-        if settings.set_theme(theme_name): 
-            self._theme_just_changed = True
-            # Tray checkmarks should update via pystray's own logic when menu is shown or item clicked.
-            # If you need to force an update of the visual menu (e.g. if text changed):
-            # self._request_rebuild_tray_icon_from_main_thread()
 
-    def change_language(self, lang_code, icon=None, item=None):
+    def change_theme(self, theme_name, icon=None, item=None): # Tray args
+        # (Same as your existing change_theme)
         if self.root_destroyed: return
-        if settings.LANGUAGE == lang_code: return
+        if settings.set_theme(theme_name): # set_theme handles apply_theme_globally & status update
+            self._theme_just_changed = True # Flag for _update_ui_text logic
+            # Pystray handles checkmark updates automatically.
+            # If menu item *text* itself changed due to theme (unlikely), then rebuild.
+            # self._request_rebuild_tray_icon_from_main_thread() # Usually not needed for theme change
+
+    def change_language(self, lang_code, icon=None, item=None): # Tray args
+        # (Same as your existing change_language)
+        if self.root_destroyed: return
+        if settings.LANGUAGE == lang_code: return # No change
         
-        if settings.set_language(lang_code): 
-            # self._update_ui_text() # Called by apply_theme_globally(language_changed=True) via set_language
-            self.start_hotkey_listener() 
+        if settings.set_language(lang_code): # This calls apply_theme_globally(language_changed=True)
+                                            # which in turn calls _update_ui_text.
+                                            # It also reloads hotkey_actions.
+            self.start_hotkey_listener() # Restart with new prompts if language affects them
             
-            lang_name = settings.SUPPORTED_LANGUAGES.get(settings.LANGUAGE, settings.LANGUAGE)
+            lang_name = settings.SUPPORTED_LANGUAGES.get(settings.LANGUAGE, settings.LANGUAGE) # Get full name
             self.update_status(settings.T('status_lang_changed_to').format(lang_name=lang_name), 'status_ready_fg')
-            self._lang_just_changed = True
+            self._lang_just_changed = True # Flag for _update_ui_text logic
             
+            # Language change affects tray menu item texts, so rebuild is necessary.
             self._request_rebuild_tray_icon_from_main_thread()
         else:
+            # This case should be rare if lang_code is from SUPPORTED_LANGUAGES
             self.update_status(f"Failed to change language to {lang_code}.", 'status_error_fg')
 
 
-    def hide_to_tray(self, event=None): 
+    def hide_to_tray(self, event=None): # Can be called by WM_DELETE_WINDOW
+        # (Same as your existing hide_to_tray)
         if self.root_destroyed or not PYSTRAY_AVAILABLE: return
         if self.root and self.root.winfo_exists():
             self.root.withdraw()
             self._explicitly_hidden_to_tray = True # Flag that it was hidden by user/WM_DELETE
             self.update_status(settings.T('window_hidden_status'), 'status_default_fg')
+            # Update tray menu (e.g. "Show Window" visibility)
             if self.tray_icon and hasattr(self.tray_icon, 'update_menu'): self.tray_icon.update_menu()
 
-    def show_window(self, icon=None, item=None): 
+    def show_window(self, icon=None, item=None): # Can be called from tray
+        # (Same as your existing show_window)
         if self.root_destroyed: return
-        def _show():
+        def _show(): # Ensure running on main Tkinter thread
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                  self.root.deiconify(); self.root.lift(); self.root.focus_force()
                  self._explicitly_hidden_to_tray = False # Window is now shown
                  self.update_status(settings.T('window_restored_status'), 'status_default_fg')
+                 # Update tray menu (e.g. "Show Window" visibility)
                  if PYSTRAY_AVAILABLE and self.tray_icon and hasattr(self.tray_icon, 'update_menu'): self.tray_icon.update_menu()
         if self.root and self.root.winfo_exists(): self.root.after(0, _show)
 
     def _stop_hotkey_listener(self):
+        # (Same as your existing _stop_hotkey_listener)
         if self.hotkey_listener:
             try: self.hotkey_listener.stop()
-            except Exception: pass
+            except Exception as e: print(f"Exception stopping hotkey listener: {e}")
             self.hotkey_listener = None
         if self.listener_thread and self.listener_thread.is_alive():
-            self.listener_thread.join(timeout=0.2) 
+            print("Joining hotkey listener thread...")
+            self.listener_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS) # Wait a bit
+            if self.listener_thread.is_alive():
+                print("Warning: Hotkey listener thread did not join in time.")
             self.listener_thread = None
+        print("Hotkey listener stopped.")
 
     def start_hotkey_listener(self):
+        # (Same as your existing start_hotkey_listener)
         if self.root_destroyed: return
-        self._stop_hotkey_listener()
+        self._stop_hotkey_listener() # Ensure any old listener is stopped
+
         hotkey_map = {}
         try:
-            if not settings.HOTKEY_ACTIONS:
+            if not settings.HOTKEY_ACTIONS: # Check if hotkeys were loaded
                 self.update_status_safe(f"{settings.T('hotkey_failed_status')}: No hotkeys loaded.", 'status_error_fg')
                 return
 
-            for _, details in settings.HOTKEY_ACTIONS.items():
+            for action_key, details in settings.HOTKEY_ACTIONS.items(): # Iterate through loaded actions
+                # Use partial to capture the prompt_source for this specific hotkey
                 hotkey_map[details['hotkey']] = partial(self._trigger_capture, prompt_source=details['prompt'])
 
-            if not hotkey_map:
+            if not hotkey_map: # No valid hotkeys found
                  self.update_status_safe(f"{settings.T('hotkey_failed_status')}: No valid hotkeys configured.", 'status_error_fg')
                  return
 
             self.hotkey_listener = keyboard.GlobalHotKeys(hotkey_map)
             self.listener_thread = threading.Thread(target=self.hotkey_listener.run, daemon=True, name="HotkeyListenerThread")
             self.listener_thread.start()
-        except Exception as e: 
+            print("Hotkey listener started.")
+        except Exception as e: # Catch errors from pynput setup
             error_msg = settings.T('dialog_hotkey_error_msg').format(error=e)
             self.update_status_safe(settings.T('hotkey_failed_status'), 'status_error_fg')
+            # Show dialog on main thread
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                  self.root.after(0, messagebox.showerror, settings.T('dialog_hotkey_error_title'), error_msg, parent=self.root)
 
 
     def on_exit(self, icon=None, item=None, from_tray=False, is_wm_delete=False):
-        if not self.running: return
+        # (Same as your existing on_exit)
+        if not self.running: return # Already exiting
         
-        self.running = False 
+        self.running = False # Signal other parts of app to stop
         print(settings.T('exiting_app_status'))
         self.update_status_safe(settings.T('exiting_app_status'), 'status_default_fg')
 
+        # Stop hotkey listener first
+        print(settings.T('stopping_hotkeys_status'))
         self._stop_hotkey_listener()
 
+        # Stop tray icon
         if PYSTRAY_AVAILABLE and self.tray_icon:
+            print(settings.T('stopping_tray_status'))
             try:
-                self.tray_icon.stop() 
+                self.tray_icon.stop() # Signal pystray to stop
             except Exception as e: print(f"Error stopping tray icon: {e}")
         
+        # Schedule root destruction on main thread if not already on it
         if not self.root_destroyed and self.root and self.root.winfo_exists():
             if threading.current_thread() == threading.main_thread():
                 self._destroy_root_safely()
             else:
+                # If on_exit is called from a non-main thread (e.g., tray icon thread),
+                # schedule the destroy on the main Tkinter thread.
                 self.root.after(0, self._destroy_root_safely)
+        else:
+            self.root_destroyed = True # Ensure flag is set if root was already gone
 
     def _destroy_root_safely(self):
+        # (Same as your existing _destroy_root_safely)
         if not self.root_destroyed and self.root and self.root.winfo_exists():
             try:
+                # Destroy any dependent Toplevel windows first
                 if self.response_window and self.response_window.winfo_exists():
                     self.response_window.destroy()
                 self.root.destroy()
-            except tk.TclError: pass 
-        self.root_destroyed = True
+                print("Tkinter root window destroyed.")
+            except tk.TclError as e:
+                print(f"TclError during root destroy (likely already happening): {e}")
+            except Exception as e:
+                print(f"Unexpected error during root destroy: {e}")
+        self.root_destroyed = True # Mark as destroyed
 
     def run(self):
-        if self.root_destroyed: return
+        # (Same as your existing run)
+        if self.root_destroyed:
+            print("Run called on already destroyed app. Exiting.")
+            return
+
         self.start_hotkey_listener()
-        self.setup_tray_icon()
+        self.setup_tray_icon() # Sets up the tray icon and starts its thread
         
         status_msg_key = 'ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
         self.update_status(settings.T(status_msg_key), 'status_ready_fg')
         
         try:
+            print("Starting Tkinter mainloop...")
             self.root.mainloop()
+            print("Tkinter mainloop finished.")
         except KeyboardInterrupt:
-            print("KeyboardInterrupt received, initiating exit.")
-            if self.running : self.on_exit()
+            print("KeyboardInterrupt received, initiating exit sequence from mainloop.")
+            if self.running : self.on_exit() # Ensure on_exit is called
         except Exception as e:
             print(f"Unhandled error in Tkinter mainloop: {e}")
-            if self.running : self.on_exit()
+            if self.running : self.on_exit() # Ensure on_exit is called
 
-        if self.running: self.running = False 
+        # Post-mainloop cleanup (if on_exit wasn't called or didn't complete fully)
+        if self.running: # If mainloop exited without on_exit being fully processed
+            print("Mainloop exited, but app still marked as running. Calling on_exit.")
+            self.on_exit() 
+            self.running = False # Explicitly set again
         
-        self._stop_hotkey_listener() 
+        # Ensure threads are joined after mainloop (if not done by on_exit)
+        self._stop_hotkey_listener() # Redundant if on_exit worked, but safe
 
         if PYSTRAY_AVAILABLE and self.tray_thread and self.tray_thread.is_alive():
-            self.tray_thread.join(timeout=0.5) 
+            print("Main run: Joining tray thread post-mainloop...")
+            self.tray_icon.stop() # Ensure tray icon is signalled to stop
+            self.tray_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS)
+            if self.tray_thread.is_alive():
+                print("Warning: Tray thread did not exit post-mainloop.")
         
-        if not self.root_destroyed:
+        if not self.root_destroyed: # Ensure root is gone
             self._destroy_root_safely()
 
         print(settings.T('app_exit_complete_status'))
@@ -784,26 +971,86 @@ class ScreenshotApp:
 
 
 def main():
+    # 1. Check for critical initialization errors from settings.py first
+    # These are errors where settings.py itself loaded, but its internal file loading
+    # (like hotkeys.json or ui_texts.json) failed.
+    # `settings._initialization_errors` will be populated by settings.py if such errors occur.
+    if hasattr(settings, '_initialization_errors') and settings._initialization_errors:
+        error_title_key = 'dialog_settings_error_title' # Generic title
+        # We'll use a generic message template and fill details
+        error_msg_template_key = 'dialog_hotkey_json_error_msg' # Re-use for file loading issues
+
+        try:
+            # Attempt to use settings.T for localized error messages if UI_TEXTS loaded.
+            # This is a bit of a catch-22 if ui_texts.json itself failed.
+            _ = settings.T(error_title_key) # Test if T function works
+            title = settings.T(error_title_key)
+            # Format the errors from settings._initialization_errors
+            error_details_list = []
+            for e_item_str in settings._initialization_errors:
+                # Try to extract filename if present (e.g., "UI texts (ui_texts.json): File not found...")
+                import re
+                match = re.search(r"\((.*?)\):", e_item_str)
+                file_hint = match.group(1) if match else "a configuration file"
+                error_details_list.append(f"- {file_hint}: {e_item_str.split(': ', 1)[-1]}")
+            error_details = "\n".join(error_details_list)
+
+            message = settings.T(error_msg_template_key).format(
+                file="one or more critical data files (see details below)", 
+                error=error_details
+            )
+        except Exception: # Fallback if settings.T is broken (e.g., ui_texts.json itself failed to load)
+            title = "Screener - Configuration Error"
+            error_details = "\n".join([f"- {e_item}" for e_item in settings._initialization_errors])
+            message = f"Failed to load essential configuration or UI text files.\n"\
+                      f"Please ensure files like hotkeys.json and ui_texts.json are present and correctly formatted.\n\n"\
+                      f"Details:\n{error_details}"
+        
+        # Display the error dialog
+        try:
+            root_err_dialog = tk.Tk()
+            root_err_dialog.withdraw()
+            messagebox.showerror(title, message, parent=root_err_dialog)
+            root_err_dialog.destroy()
+        except Exception as tk_popup_err:
+            print(f"CRITICAL ERROR: Could not display error dialog: {tk_popup_err}")
+            print(f"Original Error Title: {title}")
+            print(f"Original Error Message: {message}")
+        return # Exit the application if these critical files failed to load
+
+    # If the above passed, settings.py and its essential bundled files (hotkeys, ui_texts) loaded.
+    # The initial ImportError handling at the top of screener.py catches cases where
+    # settings.py *could not be imported at all*, or settings.json caused an immediate error.
+
+    # Proceed with application startup
     print(f"{settings.T('app_title')} Starting...")
     print(f'Platform: {platform.system()} {platform.release()}')
     print(f"Ollama URL: {settings.OLLAMA_URL}")
     print(f"Ollama Model: {settings.OLLAMA_MODEL}")
     print(f"App language: {settings.LANGUAGE} ({settings.SUPPORTED_LANGUAGES.get(settings.LANGUAGE, 'Unknown')})")
     print(f"App theme: {settings.CURRENT_THEME}")
+    print(f"Icon path for tray: {settings.ICON_PATH}")
 
+
+    # 2. Check for optional tray icon file (icon.png)
+    # This is less critical than hotkeys.json or ui_texts.json as a default can be used.
     if PYSTRAY_AVAILABLE:
         try:
-            with Image.open(settings.ICON_PATH) as img: pass
+            # settings.ICON_PATH is now correctly resolved by settings.py
+            with Image.open(settings.ICON_PATH) as img:
+                print(f"Tray icon '{settings.ICON_PATH}' loaded successfully for check.")
         except FileNotFoundError:
+            # This means icon.png specified in settings.json (or default) was not found
+            # where settings.py expected it (i.e., in _BUNDLE_DIR for bundled app).
             root_check = tk.Tk(); root_check.withdraw()
             proceed = messagebox.askokcancel(
                 settings.T('dialog_icon_warning_title'),
-                settings.T('dialog_icon_warning_msg').format(path=settings.ICON_PATH),
+                settings.T('dialog_icon_warning_msg').format(path=settings.ICON_PATH), # Show expected path
                 parent=root_check 
             )
             root_check.destroy()
             if not proceed: return
-        except Exception as e: 
+        except Exception as e: # Other PIL errors loading the icon
             root_check = tk.Tk(); root_check.withdraw()
             proceed = messagebox.askokcancel(
                 settings.T('dialog_icon_error_title'),
