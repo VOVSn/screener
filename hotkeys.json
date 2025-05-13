@@ -1,0 +1,54 @@
+{
+    "solve": {
+      "hotkey": "<ctrl>+<alt>+s",
+      "description": {
+        "en": "Solve problem / Describe (EN)",
+        "ru": "Решить задачу / Описать (РУ)"
+      },
+      "prompt": {
+        "en": "Analyze the image. If it presents a problem (mathematical, logical, or technical), provide a step-by-step solution or explanation. If not, describe the image.",
+        "ru": "Проанализируйте изображение. Если это проблема (математическая, логическая или техническая), предоставьте пошаговое решение или объяснение. Если нет, опишите изображение."
+      }
+    },
+    "describe": {
+      "hotkey": "<ctrl>+<alt>+d",
+      "description": {
+        "en": "Describe image (EN)",
+        "ru": "Описать изображение (РУ)"
+      },
+      "prompt": {
+        "en": "Describe the contents of this image in detail, focusing on the main subject, text, and any notable elements.",
+        "ru": "Подробно опишите содержимое этого изображения, уделяя особое внимание основному объекту, тексту и любым примечательным элементам."
+      }
+    },
+    "code": {
+      "hotkey": "<ctrl>+<alt>+c",
+      "description": {
+        "en": "Generate code / Describe (EN)",
+        "ru": "Сгенерировать код / Описать (РУ)"
+      },
+      "prompt": {
+        "en": "Analyze the image. If it describes a programming problem or task, generate relevant code (preferably Python) to address it. Explain the code briefly. If not a coding task, describe the image.",
+        "ru": "Проанализируйте изображение. Если оно описывает проблему или задачу программирования, сгенерируйте соответствующий код (желательно Python) для ее решения. Кратко объясните код. Если это не задача по программированию, опишите изображение."
+      }
+    },
+    "translate_russian": {
+      "hotkey": "<ctrl>+<alt>+r",
+      "description": {
+        "en": "Translate / Describe in Russian",
+        "ru": "Перевести / Описать на русском"
+      },
+      "prompt": {
+        "en": "Analyze the image. If it contains text, translate it to Russian. If it's primarily an image, describe its contents in detail in Russian.",
+        "ru": "Проанализируйте изображение. Если оно содержит текст, переведите его на русский язык. Если это в основном изображение, подробно опишите его содержимое на русском языке."
+      }
+    },
+    "custom_prompt_hotkey": {
+      "hotkey": "<ctrl>+<alt>+e",
+      "description": {
+        "en": "Use custom prompt (from input field)",
+        "ru": "Использовать свой запрос (из поля ввода)"
+      },
+      "prompt": "CUSTOM_PROMPT_PLACEHOLDER"
+    }
+  }
