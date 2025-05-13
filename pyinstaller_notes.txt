@@ -1,0 +1,4 @@
+pyinstaller --noconfirm --name screener --onefile --windowed --icon=screener/icon.ico --add-data="screener/hotkeys.json:." --add-data="screener/ui_texts.json:." --add-data="screener/icon.png:." --add-data="screener/icon.ico:." screener/main.py
+
+pyinstaller screener.spec
+
