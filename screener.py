@@ -70,10 +70,21 @@ except ImportError:
     PYSTRAY_AVAILABLE = False
 
 
+# --- Add to settings.py (or define here if not already there for response window) ---
+# settings.py or here for clarity in this example:
+RESPONSE_WINDOW_MIN_WIDTH = 400
+RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES = 5 # Min height for the ScrolledText in text lines
+# These pixel values are estimates; Tkinter's actual widget sizes can vary by platform/theme.
+# We'll use them to help calculate a rough minimum window height.
+ESTIMATED_CONTROL_FRAME_HEIGHT_PX = 50  # Slider + Label + Padding
+ESTIMATED_BUTTON_FRAME_HEIGHT_PX = 50   # Buttons + Padding
+ESTIMATED_PADDING_PX = 20               # General window padding (top/bottom)
+
+
 class ScreenshotApp:
     def __init__(self):
         self.root = tk.Tk()
-        # ... (rest of __init__ - unchanged from previous version that fixed TclError) ...
+        # ... (rest of __init__ - unchanged) ...
         default_font = tkFont.nametofont('TkDefaultFont')
         default_font.configure(size=settings.DEFAULT_FONT_SIZE)
         self.root.option_add('*Font', default_font)
@@ -104,9 +115,8 @@ class ScreenshotApp:
         self._setup_ui_structure()
         self._update_ui_text()
 
-    # --- UI Setup and Update Methods (largely unchanged, ensure self.root_destroyed checks) ---
+    # ... (other methods - _setup_ui_structure, _update_ui_text, etc. - unchanged)
     def _setup_ui_structure(self):
-        # ... (as in previous version) ...
         self.root.geometry(settings.MAIN_WINDOW_GEOMETRY)
         self.root.resizable(settings.WINDOW_RESIZABLE_WIDTH, settings.WINDOW_RESIZABLE_HEIGHT)
         main_frame = ttk.Frame(self.root, padding=settings.PADDING_LARGE)
@@ -135,10 +145,10 @@ class ScreenshotApp:
         self.root.protocol('WM_DELETE_WINDOW', close_action)
 
     def _update_ui_text(self):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return 
         self.root.title(settings.T('app_title'))
         if self.main_label: self.main_label.config(text=settings.T('main_label_text'))
+        # ... (rest of _update_ui_text as before) ...
         if self.custom_prompt_label_widget: self.custom_prompt_label_widget.config(text=settings.T('custom_prompt_label'))
         if self.hotkeys_list_label_widget: self.hotkeys_list_label_widget.config(text=settings.T('hotkeys_list_label'))
         if self.hotkeys_text_area:
@@ -186,10 +196,9 @@ class ScreenshotApp:
             exit_key = 'exit_button_text_tray' if PYSTRAY_AVAILABLE else 'exit_button_text'
             self.exit_button.config(text=settings.T(exit_key))
 
-    # --- Core Logic Methods (largely unchanged, ensure self.root_destroyed checks) ---
     def _get_prompt_for_action(self, prompt_source):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return None
+        # ... (rest of _get_prompt_for_action as before) ...
         if prompt_source == settings.CUSTOM_PROMPT_IDENTIFIER:
             custom_prompt = self.custom_prompt_var.get().strip()
             if not custom_prompt:
@@ -205,13 +214,12 @@ class ScreenshotApp:
             return None
 
     def _trigger_capture_from_ui(self, prompt_source):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return
         self._trigger_capture(prompt_source, icon=None, item=None)
 
     def _trigger_capture(self, prompt_source, icon=None, item=None):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return
+        # ... (rest of _trigger_capture as before) ...
         actual_prompt = self._get_prompt_for_action(prompt_source)
         if actual_prompt is None:
             ready_key = 'ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
@@ -220,14 +228,14 @@ class ScreenshotApp:
         self.capturer.capture_region(actual_prompt)
     
     def process_screenshot_with_ollama(self, screenshot: Image.Image, prompt: str):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return
+        # ... (rest of process_screenshot_with_ollama as before) ...
         self.update_status(settings.T('processing_status_text'), settings.STATUS_COLOR_PROCESSING)
         threading.Thread(target=self._ollama_request_worker, args=(screenshot, prompt), daemon=True).start()
 
     def _ollama_request_worker(self, screenshot: Image.Image, prompt: str):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return
+        # ... (rest of _ollama_request_worker as before) ...
         try:
             response_text = ollama_utils.request_ollama_analysis(screenshot, prompt)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
@@ -237,23 +245,42 @@ class ScreenshotApp:
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.update_status, settings.T('unexpected_error_status'), settings.STATUS_COLOR_ERROR)
 
+
     def display_ollama_response(self, response_text):
-        # ... (as in previous version, with self.root_destroyed checks and robust widget checks) ...
         if self.root_destroyed: return
-        if self.response_window and self.response_window.winfo_exists(): self.response_window.destroy()
-        if not self.root or not self.root.winfo_exists(): return 
+        if self.response_window and self.response_window.winfo_exists():
+            try:
+                self.response_window.destroy()
+            except tk.TclError: # Handle if already destroyed during a race condition
+                pass
+        
+        if not self.root or not self.root.winfo_exists(): return
+
         self.response_window = tk.Toplevel(self.root)
         self.response_window.title(settings.T('response_window_title'))
-        self.response_window.geometry(settings.RESPONSE_WINDOW_GEOMETRY)
+        # Initial geometry can still be generous
+        self.response_window.geometry(settings.RESPONSE_WINDOW_GEOMETRY) 
+
+        # --- Create frames first to measure them ---
         text_frame = ttk.Frame(self.response_window)
-        text_frame.pack(padx=settings.RESPONSE_TEXT_PADDING_X, pady=settings.RESPONSE_TEXT_PADDING_Y_TOP, fill=tk.BOTH, expand=True)
-        txt_area = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, relief=tk.FLAT, bd=0, font=('TkDefaultFont', settings.DEFAULT_FONT_SIZE))
-        txt_area.pack(fill=tk.BOTH, expand=True)
+        # Don't pack yet, or use pack_forget later if measuring after packing.
+        # For simplicity, we'll create them, then configure window, then pack.
+
+        # ScrolledText with a minimum line height
+        txt_area = scrolledtext.ScrolledText(
+            text_frame, wrap=tk.WORD, relief=tk.FLAT, bd=0,
+            font=('TkDefaultFont', settings.DEFAULT_FONT_SIZE),
+            height=RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES # Set min height in lines
+        )
+        # txt_area will expand, so its initial height contributes to min window height.
+
         control_frame = ttk.Frame(self.response_window)
-        control_frame.pack(padx=settings.RESPONSE_CONTROL_PADDING_X, pady=settings.RESPONSE_CONTROL_PADDING_Y, fill=tk.X)
+        # Populate control_frame to get its height
         self.current_response_font_size = settings.DEFAULT_FONT_SIZE 
         size_label_ref = {'widget': None} 
+
         def update_font_size_display(size_val_str):
+            # ... (font update logic as before, with self.root_destroyed checks) ...
             if self.root_destroyed: return
             try:
                 new_size = int(float(size_val_str))
@@ -261,22 +288,25 @@ class ScreenshotApp:
                 self.current_response_font_size = new_size
                 if size_label_ref['widget'] and size_label_ref['widget'].winfo_exists():
                     size_label_ref['widget'].config(text=settings.T('font_size_label_format').format(size=new_size))
-                if txt_area.winfo_exists():
+                if txt_area.winfo_exists(): 
                     base_font_obj = tkFont.Font(font=txt_area['font'])
                     base_font_obj.configure(size=new_size)
                     txt_area.configure(font=base_font_obj)
                     ui_utils.apply_formatting_tags(txt_area, response_text, new_size)
             except (ValueError, tk.TclError): pass
-        font_slider = ttk.Scale(control_frame, from_=settings.MIN_FONT_SIZE, to=settings.MAX_FONT_SIZE, orient=tk.HORIZONTAL, value=self.current_response_font_size, command=update_font_size_display)
+
+        font_slider = ttk.Scale(control_frame, from_=settings.MIN_FONT_SIZE, to=settings.MAX_FONT_SIZE, orient=tk.HORIZONTAL,
+                                value=self.current_response_font_size, command=update_font_size_display)
         font_slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, settings.PADDING_LARGE))
         size_label = ttk.Label(control_frame, text=settings.T('font_size_label_format').format(size=self.current_response_font_size), width=settings.FONT_SIZE_LABEL_WIDTH)
         size_label.pack(side=tk.LEFT)
         size_label_ref['widget'] = size_label
-        ui_utils.apply_formatting_tags(txt_area, response_text, self.current_response_font_size)
+
         button_frame_resp = ttk.Frame(self.response_window)
-        button_frame_resp.pack(pady=settings.RESPONSE_BUTTON_PADDING_Y, fill=tk.X, padx=settings.RESPONSE_BUTTON_PADDING_X)
+        # Populate button_frame_resp to get its height
         copy_button_ref = {'widget': None}
         def copy_to_clipboard_command():
+            # ... (copy logic as before, with self.root_destroyed checks) ...
             if self.root_destroyed or not (self.response_window and self.response_window.winfo_exists()): return
             raw_text_content = txt_area.get('1.0', tk.END).strip()
             try:
@@ -295,16 +325,64 @@ class ScreenshotApp:
         copy_button_ref['widget'] = copy_button
         close_button = ttk.Button(button_frame_resp, text=settings.T('close_button_text'), command=lambda: self.response_window.destroy() if self.response_window and self.response_window.winfo_exists() else None)
         close_button.pack(side=tk.RIGHT, padx=settings.PADDING_SMALL)
-        if self.response_window and self.response_window.winfo_exists(): # Ensure it still exists before transient
+
+        # --- Calculate Minimum Height ---
+        # We need to update_idletasks for widgets to get their actual sizes
+        self.response_window.update_idletasks() 
+        
+        # Get font metrics to estimate line height for ScrolledText
+        current_font = tkFont.Font(font=txt_area['font'])
+        line_height_px = current_font.metrics("linespace")
+        min_text_area_height_px = RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES * line_height_px
+
+        # Get actual heights of control and button frames
+        # Ensure they are packed or have a requested size before measuring if they weren't packed yet.
+        # If not packed, their reqheight might be 1. So, use estimates or pack them temporarily.
+        # For simplicity, using the estimates here, but measuring packed frames is more accurate.
+        # control_frame.pack_propagate(False) # If you were to pack then measure
+        # button_frame_resp.pack_propagate(False)
+
+        # control_h = control_frame.winfo_reqheight() # More accurate if packed
+        # button_h = button_frame_resp.winfo_reqheight() # More accurate if packed
+        control_h = ESTIMATED_CONTROL_FRAME_HEIGHT_PX
+        button_h = ESTIMATED_BUTTON_FRAME_HEIGHT_PX
+        
+        # Total minimum height
+        min_total_height = (
+            min_text_area_height_px +
+            control_h +
+            button_h +
+            settings.RESPONSE_TEXT_PADDING_Y_TOP[0] + # Top padding for text_frame
+            settings.RESPONSE_TEXT_PADDING_Y_TOP[1] + # Bottom padding for text_frame (though it's (10,0))
+            abs(settings.RESPONSE_CONTROL_PADDING_Y) *2 + # Assuming symmetrical padding for control frame
+            abs(settings.RESPONSE_BUTTON_PADDING_Y[0]) + abs(settings.RESPONSE_BUTTON_PADDING_Y[1]) + # Padding for button frame
+            ESTIMATED_PADDING_PX # Some general extra window padding
+        )
+        min_total_height = int(min_total_height)
+
+        self.response_window.minsize(RESPONSE_WINDOW_MIN_WIDTH, min_total_height)
+        # print(f"Response window minsize set to: {RESPONSE_WINDOW_MIN_WIDTH}x{min_total_height}") # For debugging
+
+        # --- Now pack the main frames ---
+        text_frame.pack(padx=settings.RESPONSE_TEXT_PADDING_X, pady=settings.RESPONSE_TEXT_PADDING_Y_TOP, fill=tk.BOTH, expand=True)
+        txt_area.pack(fill=tk.BOTH, expand=True) # txt_area is child of text_frame
+        control_frame.pack(padx=settings.RESPONSE_CONTROL_PADDING_X, pady=settings.RESPONSE_CONTROL_PADDING_Y, fill=tk.X)
+        button_frame_resp.pack(pady=settings.RESPONSE_BUTTON_PADDING_Y, fill=tk.X, padx=settings.RESPONSE_BUTTON_PADDING_X)
+
+        ui_utils.apply_formatting_tags(txt_area, response_text, self.current_response_font_size)
+
+        if self.response_window and self.response_window.winfo_exists():
             self.response_window.transient(self.root)
             self.response_window.grab_set()
             self.response_window.focus_force()
+        
         ready_key = 'ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
         self.update_status(settings.T(ready_key), settings.STATUS_COLOR_READY)
 
-    # --- Hotkey and Status Methods (largely unchanged, ensure self.root_destroyed checks) ---
+    # ... (rest of the methods - _stop_hotkey_listener, start_hotkey_listener, update_status, tray methods, exit methods, run, main)
+    # These should be as in the previous version that fixed the "tray thread still alive" and "TclError on exit" issues.
+    # Ensure self.root_destroyed checks are in place in those methods too.
     def _stop_hotkey_listener(self):
-        # ... (as in previous version) ...
         if self.hotkey_listener:
             try: self.hotkey_listener.stop()
             except Exception: pass
@@ -315,7 +393,6 @@ class ScreenshotApp:
             self.listener_thread = None
 
     def start_hotkey_listener(self):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return
         self._stop_hotkey_listener()
         hotkey_map = {}
@@ -336,7 +413,6 @@ class ScreenshotApp:
             self.update_status(settings.T('hotkey_failed_status'), settings.STATUS_COLOR_ERROR)
 
     def update_status(self, message, color=None):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return
         def _update():
             if not self.root_destroyed and hasattr(self, 'status_label') and self.status_label and self.status_label.winfo_exists():
@@ -345,9 +421,7 @@ class ScreenshotApp:
         if not self.root_destroyed and self.root and self.root.winfo_exists():
             self.root.after(0, _update)
 
-    # --- Tray Icon Methods (Key Changes Here) ---
     def _build_tray_menu(self):
-        # ... (as in previous version, with self.root_destroyed checks) ...
         if self.root_destroyed: return tuple() 
         lang_submenu_items = []
         for code, name in settings.SUPPORTED_LANGUAGES.items():
@@ -376,77 +450,40 @@ class ScreenshotApp:
     def _request_rebuild_tray_icon_from_main_thread(self):
         if self.root_destroyed: return
         if self.root and self.root.winfo_exists():
-            # Use a small delay for the 'after' call to allow current event processing
-            # in the pystray thread to potentially complete before we try to stop it.
-            self.root.after(100, self._rebuild_tray_icon_on_main_thread) # 100ms delay
-        # else: print("Error: Cannot schedule tray rebuild, Tkinter root not available.") # Less verbose
+            self.root.after(100, self._rebuild_tray_icon_on_main_thread)
 
     def _rebuild_tray_icon_on_main_thread(self):
         if self.root_destroyed: return
         if not PYSTRAY_AVAILABLE or not self.icon_image: return
-
-        if not self.is_rebuilding_tray.acquire(blocking=False):
-            # print("Tray rebuild already in progress, skipping.") # Less verbose
-            return
-        
-        current_thread_name = threading.current_thread().name
-        # print(f"Rebuilding tray on thread: {current_thread_name}") # Verbose
-
+        if not self.is_rebuilding_tray.acquire(blocking=False): return
         try:
             old_tray_instance = self.tray_icon
             old_tray_thread = self.tray_thread
-
             if old_tray_instance:
-                # print(f"Stopping existing tray icon (instance: {old_tray_instance})...") # Verbose
-                old_tray_instance.stop() # Signal the icon to stop
-                self.tray_icon = None # Nullify the instance variable
-
-            # Give the old thread a moment to process the stop signal
+                old_tray_instance.stop()
+                self.tray_icon = None
             if old_tray_thread and old_tray_thread.is_alive():
-                # print(f"Waiting for old tray thread ({old_tray_thread.name}) to finish after stop signal...") # Verbose
-                old_tray_thread.join(timeout=1.5) # Slightly longer timeout
-                if old_tray_thread.is_alive():
-                    print(f"Warning: Old tray thread ({old_tray_thread.name}) did not stop cleanly after 1.5s.")
-                # else: print(f"Old tray thread ({old_tray_thread.name}) stopped.") # Verbose
-            self.tray_thread = None # Nullify thread variable
-
-            # Create and start the new tray icon
-            # print("Building and starting new tray icon...") # Verbose
+                old_tray_thread.join(timeout=1.5)
+                if old_tray_thread.is_alive(): print(f"Warning: Old tray thread ({old_tray_thread.name}) did not stop cleanly.")
+            self.tray_thread = None
             new_menu = self._build_tray_menu()
-            if not new_menu and PYSTRAY_AVAILABLE: # If menu build failed (e.g. root destroyed during process)
-                print("Error: Failed to build new tray menu, aborting tray rebuild.")
+            if not new_menu and PYSTRAY_AVAILABLE:
                 self.is_rebuilding_tray.release()
                 return
-
-            self.tray_icon = pystray.Icon(
-                settings.TRAY_ICON_NAME, self.icon_image, 
-                settings.T('app_title'), new_menu
-            )
-            self.tray_thread = threading.Thread(
-                target=self.tray_icon.run, daemon=True, name="PystrayThread" 
-            ) # Explicitly name new threads
+            self.tray_icon = pystray.Icon( settings.TRAY_ICON_NAME, self.icon_image, settings.T('app_title'), new_menu )
+            self.tray_thread = threading.Thread( target=self.tray_icon.run, daemon=True, name="PystrayThread" )
             self.tray_thread.start()
-            # print(f"New tray icon thread ({self.tray_thread.name}) started with icon ({self.tray_icon}).") # Verbose
-        
-        except Exception as e:
-            print(f"Exception during tray rebuild: {e}")
-        finally:
-            self.is_rebuilding_tray.release()
-            # print("Tray rebuild lock released.") # Verbose
+        except Exception as e: print(f"Exception during tray rebuild: {e}")
+        finally: self.is_rebuilding_tray.release()
 
     def setup_tray_icon(self):
-        # ... (as in previous version) ...
         if self.root_destroyed: return
         if not PYSTRAY_AVAILABLE or not self.icon_image: return
         self._rebuild_tray_icon_on_main_thread()
 
     def change_language(self, lang_code, icon=None, item=None):
-        # ... (as in previous version) ...
         if self.root_destroyed: return
         if settings.LANGUAGE == lang_code: return 
-        
-        # print(f"Change language requested for: {lang_code}. Current thread: {threading.current_thread().name}") # Verbose
-
         if settings.set_language(lang_code): 
             self._update_ui_text()       
             self.start_hotkey_listener() 
@@ -457,14 +494,12 @@ class ScreenshotApp:
             self.update_status(f"Failed to change to {lang_code}.", settings.STATUS_COLOR_ERROR)
 
     def hide_to_tray(self, event=None): 
-        # ... (as in previous version) ...
         if self.root_destroyed: return
         if self.root and self.root.winfo_exists():
             self.root.withdraw()
             if self.tray_icon and hasattr(self.tray_icon, 'update_menu'): self.tray_icon.update_menu()
 
     def show_window(self, icon=None, item=None): 
-        # ... (as in previous version) ...
         if self.root_destroyed: return
         def _show():
             if not self.root_destroyed and self.root and self.root.winfo_exists():
@@ -473,50 +508,28 @@ class ScreenshotApp:
         if not self.root_destroyed and self.root and self.root.winfo_exists():
             self.root.after(0, _show)
 
-
-    # --- Exit Logic Methods (Crucial for clean shutdown) ---
     def on_exit(self, icon=None, item=None, from_tray=False, is_wm_delete=False):
-        if not self.running:
-            # print("Exit already in progress.") # Less verbose
-            return
-        
-        # print(f"on_exit called. from_tray={from_tray}, is_wm_delete={is_wm_delete}, thread={threading.current_thread().name}") # Verbose
+        if not self.running: return
         print(settings.T('exiting_app_status'))
         self.running = False 
-
         self._stop_hotkey_listener()
-        # print(settings.T('stopping_hotkeys_status')) # Verbose
-
-        # Request tray to stop. The actual stop and join will be handled carefully.
+        print(settings.T('stopping_hotkeys_status'))
         if PYSTRAY_AVAILABLE and self.tray_icon:
-            # print(settings.T('stopping_tray_status')) # Verbose
-            try:
-                # print(f"Requesting tray_icon.stop() for icon: {self.tray_icon}") # Verbose
-                self.tray_icon.stop() # This should make the tray_thread exit its run loop
-            except Exception as e:
-                print(f"Error during tray_icon.stop(): {e}")
-        
-        # The mainloop's exit or root.destroy() will allow the main thread to proceed to final cleanup in run()
-        # For WM_DELETE_WINDOW or UI Exit button (main thread calls):
+            print(settings.T('stopping_tray_status'))
+            try: self.tray_icon.stop()
+            except Exception as e: print(f"Error stopping tray icon: {e}")
         if not self.root_destroyed and self.root and self.root.winfo_exists() and threading.current_thread() == threading.main_thread():
-            # print("Destroying root from on_exit (main thread)") # Verbose
-            self.root.destroy() # This will cause mainloop to exit
+            self.root.destroy()
             self.root_destroyed = True
-        elif not self.root_destroyed and self.root and self.root.winfo_exists(): # Called from another thread
+        elif not self.root_destroyed and self.root and self.root.winfo_exists():
              self.root.after(0, self._destroy_root_safely)
-
+        # The final print of 'app_exit_complete_status' will be in run() after thread joins
 
     def _destroy_root_safely(self):
         if not self.root_destroyed and self.root and self.root.winfo_exists():
-            # print('Destroying main window (scheduled)...') # Verbose
-            try:
-                self.root.destroy()
-            except tk.TclError as e:
-                print(f"TclError during scheduled root destroy (already gone?): {e}")
-            except Exception as e:
-                print(f"Error during scheduled root destroy: {e}")
+            try: self.root.destroy()
+            except (tk.TclError, Exception) : pass # Ignore if already gone
         self.root_destroyed = True
-
 
     def run(self):
         if self.root_destroyed: return
@@ -524,48 +537,23 @@ class ScreenshotApp:
         self.setup_tray_icon()       
         status_msg_key = 'ready_status_text_tray' if PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
         self.update_status(settings.T(status_msg_key), settings.STATUS_COLOR_READY)
-        
-        # print('Starting main application loop (Tkinter)...') # Verbose
         try:
             self.root.mainloop()
-        except KeyboardInterrupt:
-            # print('KeyboardInterrupt received, initiating exit...') # Verbose
-            self.on_exit() 
+        except KeyboardInterrupt: self.on_exit() 
         except Exception as e:
             print(f"Unhandled error in mainloop: {e}")
-            self.on_exit() # Attempt graceful cleanup
-        
-        # This block executes after mainloop() has exited.
-        # This is the definitive place to ensure all threads are joined.
-        # print("Mainloop exited. Performing final cleanup...") # Verbose
-
-        if self.running: # If on_exit wasn't the cause of mainloop exit or didn't complete
-            self.running = False # Ensure it's false
-            self._stop_hotkey_listener() # Stop again if it was restarted or failed
-        
-        # Join tray thread here, after mainloop is confirmed down
+            self.on_exit()
+        if self.running: # If mainloop exited for other reason than on_exit
+            self.running = False 
+            self._stop_hotkey_listener()
         if PYSTRAY_AVAILABLE and self.tray_thread and self.tray_thread.is_alive():
-            # print(f"Final attempt to join tray thread ({self.tray_thread.name}) post-mainloop...") # Verbose
-            # icon.stop() should have been called by on_exit.
-            # If tray_icon still exists and is visible, it means stop might not have been effective.
             if self.tray_icon and hasattr(self.tray_icon, 'visible') and self.tray_icon.visible:
-                try:
-                    # print("Tray icon still visible, attempting stop again.") # Verbose
-                    self.tray_icon.stop()
-                except Exception as e:
-                    print(f"Error stopping tray icon post-mainloop: {e}")
-
-            self.tray_thread.join(timeout=2.0) # Give it a bit more time on final exit
-            if self.tray_thread.is_alive():
-                print(f"Warning: Tray thread ({self.tray_thread.name}) still alive after final join attempt.")
-            # else: print(f"Tray thread ({self.tray_thread.name}) successfully joined post-mainloop.") # Verbose
-        
-        # Ensure root is marked as destroyed if not already
-        if not self.root_destroyed:
-            # print("Marking root as destroyed post-mainloop (if not already done by on_exit).") # Verbose
-            self.root_destroyed = True # Mainloop is over, root is effectively gone
-
-        print(settings.T('app_exit_complete_status')) # Moved this to be more accurate
+                try: self.tray_icon.stop()
+                except: pass
+            self.tray_thread.join(timeout=2.0)
+            if self.tray_thread.is_alive(): print(f"Warning: Tray thread still alive after final join.")
+        if not self.root_destroyed: self._destroy_root_safely()
+        print(settings.T('app_exit_complete_status'))
         print(settings.T('app_finished_status'))
 
 
