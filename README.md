@@ -68,15 +68,18 @@ Screener is a desktop application that allows you to capture regions of your scr
 
 ## Configuration
 
-Most settings are managed in `settings.py`:
+Primary application behavior is configured through environment variables managed via a `.env` file in the project root. Create a `.env` file by copying `.env.example` and customizing the values:
 
 *   `OLLAMA_URL`: URL of your Ollama API endpoint (default: `http://localhost:11434/api/generate`).
-*   `OLLAMA_MODEL`: The Ollama model to use (default: `gemma3:12b`).
+*   `OLLAMA_MODEL`: The Ollama model to use (e.g., `gemma3:12b`, `llama3:8b`).
 *   `DEFAULT_LANGUAGE`: Default application language ('en' or 'ru').
 *   `DEFAULT_THEME`: Default theme ('light' or 'dark').
+*   `OLLAMA_TIMEOUT_SECONDS`: Timeout for Ollama requests (default: 120).
+*   `ICON_PATH`: Optional path to a custom application icon.
+
+Other internal settings (like UI dimensions, specific color shades not part of the main theme) are in `settings.py`.
 
 Hotkeys are defined in `hotkeys.json`:
-
 *   You can change the key combinations and default prompts/descriptions here.
 *   Ensure hotkey combinations are valid for `pynput`.
 

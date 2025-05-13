@@ -4,3 +4,13 @@ codebase/
 venv/
 env
 *.pyc
+*.pyo
+*.pyd
+*.log
+*.db
+*.sqlite3
+dist/
+build/
+*.spec
+*.egg-info/
+.env 
