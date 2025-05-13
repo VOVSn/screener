@@ -57,7 +57,11 @@
       "tray_language_text": "Language",
       "custom_prompt_empty_warning": "Custom prompt field is empty. Please enter a prompt.",
       "dialog_warning_title": "Warning",
-      "status_lang_changed_to": "Language changed to {lang_name}."
+      "status_lang_changed_to": "Language changed to {lang_name}.",
+      "tray_theme_text": "Theme",
+      "tray_theme_light_text": "Light",
+      "tray_theme_dark_text": "Dark",
+      "status_theme_changed_to": "Theme changed to {theme_name}."
     },
     "ru": {
       "app_title": "Скриншот в Ollama",
@@ -117,6 +121,10 @@
       "tray_language_text": "Язык",
       "custom_prompt_empty_warning": "Поле для своего запроса пусто. Пожалуйста, введите запрос.",
       "dialog_warning_title": "Предупреждение",
-      "status_lang_changed_to": "Язык изменен на {lang_name}."
+      "status_lang_changed_to": "Язык изменен на {lang_name}.",
+      "tray_theme_text": "Тема",
+      "tray_theme_light_text": "Светлая",
+      "tray_theme_dark_text": "Тёмная",
+      "status_theme_changed_to": "Тема изменена на {theme_name}."
     }
   }
