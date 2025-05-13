@@ -29,29 +29,20 @@ _BUNDLE_DIR = get_bundle_dir()
 _APP_DIR = get_app_dir() # In dev, this is typically 'screener/' if settings.py is there.
 
 # --- Setup Logging EARLY ---
-# Determine where logs should go.
-# For both bundled app and dev, we want a 'logs' subdirectory within _APP_DIR.
-# _APP_DIR is the location of the executable (frozen) or the script's directory (dev, e.g., 'screener/').
 prospective_log_dir = os.path.join(_APP_DIR, 'logs')
-final_log_dir = prospective_log_dir # Assume this will be the path
+final_log_dir = prospective_log_dir
 
-# Try to create the 'logs' subdirectory.
-# Note: logging is not fully configured yet, so use print for these initial messages.
 if not os.path.exists(prospective_log_dir):
     try:
         os.makedirs(prospective_log_dir)
         print(f"INFO: Log directory created: {prospective_log_dir}")
     except OSError as e:
-        # If creating 'logs' subdirectory fails, fall back to logging directly in _APP_DIR.
         print(f"WARNING: Failed to create log directory {prospective_log_dir}: {e}. "
               f"Falling back to logging in {_APP_DIR}")
-        final_log_dir = _APP_DIR # _APP_DIR itself should exist.
+        final_log_dir = _APP_DIR
 
-# Now, call setup_logging with the determined and (hopefully) existing path.
-# logging_config.setup_logging will configure the root logger and add handlers.
-logging_config.setup_logging(app_dir_path=final_log_dir, level=logging.INFO) # Or logging.DEBUG for more verbose logs
+logging_config.setup_logging(app_dir_path=final_log_dir, level=logging.INFO)
 
-# Now that logging is configured, we can get a logger for this module.
 logger = logging.getLogger(__name__)
 
 logger.info("settings.py: _BUNDLE_DIR = %s", _BUNDLE_DIR)
@@ -59,12 +50,7 @@ logger.info("settings.py: _APP_DIR = %s", _APP_DIR)
 logger.info("settings.py: Log directory used for application logs = %s", final_log_dir)
 
 
-# --- Project Root ---
-# This definition of project_root is specific to settings.py's location.
-# If settings.py is in 'screener/', project_root is 'screener/'.
 project_root = os.path.dirname(os.path.abspath(__file__))
-
-# --- Load Application Settings from JSON ---
 SETTINGS_FILE_PATH = os.path.join(_APP_DIR, 'settings.json')
 
 _DEFAULT_CORE_SETTINGS = {
@@ -90,8 +76,8 @@ except json.JSONDecodeError as e:
 except Exception as e:
     logger.error("An unexpected error occurred while loading '%s': %s. Using default configurations.", SETTINGS_FILE_PATH, e, exc_info=True)
 
-# --- App Instance ---
-app_instance = None
+# --- App Instance (Removed - App itself will coordinate) ---
+# app_instance = None
 
 # --- Language Configuration ---
 SUPPORTED_LANGUAGES = {'en': 'English', 'ru': 'Русский'}
@@ -141,7 +127,6 @@ THEME_COLORS = {
     }
 }
 
-
 def get_theme_color(key, theme=None):
     current_theme_name = theme if theme else CURRENT_THEME
     color = THEME_COLORS.get(current_theme_name, THEME_COLORS[DEFAULT_THEME]).get(key)
@@ -153,36 +138,27 @@ def get_theme_color(key, theme=None):
 def set_theme(new_theme):
     global CURRENT_THEME
     if new_theme in THEME_COLORS:
-        if CURRENT_THEME == new_theme: return True
+        if CURRENT_THEME == new_theme:
+            logger.debug("Theme '%s' is already active.", new_theme)
+            return True # Still a success, no change needed
         CURRENT_THEME = new_theme
         logger.info("Application theme changed to: %s", CURRENT_THEME)
-        if app_instance and hasattr(app_instance, 'apply_theme_globally'):
-            app_instance.apply_theme_globally()
-            theme_name_localized = T(f'tray_theme_{new_theme}_text')
-            if app_instance and hasattr(app_instance, 'update_status'):
-                app_instance.update_status(
-                    T('status_theme_changed_to').format(theme_name=theme_name_localized),
-                    get_theme_color('status_ready_fg')
-                )
+        # App instance will call UI updates
         return True
     logger.warning("Attempted to set unsupported theme '%s'.", new_theme)
     return False
 
-# --- Ollama Configuration ---
 OLLAMA_URL = _app_config.get('OLLAMA_URL', _DEFAULT_CORE_SETTINGS['OLLAMA_URL'])
 OLLAMA_MODEL = _app_config.get('OLLAMA_MODEL', _DEFAULT_CORE_SETTINGS['OLLAMA_MODEL'])
 OLLAMA_TIMEOUT_SECONDS = int(_app_config.get('OLLAMA_TIMEOUT_SECONDS', _DEFAULT_CORE_SETTINGS['OLLAMA_TIMEOUT_SECONDS']))
 OLLAMA_DEFAULT_ERROR_MSG_KEY = 'ollama_no_response_content'
 
-
-# --- Hotkey Configuration ---
 HOTKEYS_CONFIG_FILE_NAME = 'hotkeys.json'
 _HOTKEYS_FULL_PATH = os.path.join(_BUNDLE_DIR, HOTKEYS_CONFIG_FILE_NAME)
 HOTKEY_ACTIONS = {}
 DEFAULT_MANUAL_ACTION = 'describe'
 CUSTOM_PROMPT_IDENTIFIER = "CUSTOM_PROMPT_PLACEHOLDER"
 
-# --- UI Text Configuration ---
 UI_TEXTS_FILE_NAME = 'ui_texts.json'
 _UI_TEXTS_FULL_PATH = os.path.join(_BUNDLE_DIR, UI_TEXTS_FILE_NAME)
 UI_TEXTS = {}
@@ -213,15 +189,19 @@ def load_ui_texts():
 def set_language(new_lang):
     global LANGUAGE
     if new_lang in SUPPORTED_LANGUAGES:
+        if LANGUAGE == new_lang:
+            logger.debug("Language '%s' is already active.", new_lang)
+            return True # Still a success, no change needed
         LANGUAGE = new_lang
         logger.info("Application language changed to: %s (%s)", LANGUAGE, SUPPORTED_LANGUAGES[new_lang])
         try:
-            load_hotkey_actions(LANGUAGE)
-            if app_instance and hasattr(app_instance, 'apply_theme_globally'):
-                 app_instance.apply_theme_globally(language_changed=True)
+            load_hotkey_actions(LANGUAGE) # Reload hotkeys for new language prompts
+            # App instance will call UI updates
             return True
         except Exception as e:
-            logger.error("Error reloading after language change to %s: %s", new_lang, e, exc_info=True)
+            logger.error("Error reloading hotkey actions after language change to %s: %s", new_lang, e, exc_info=True)
+            # Revert language if subsequent steps fail? Or let app handle it.
+            # For now, assume if load_hotkey_actions fails, it's a problem.
             return False
     logger.warning("Attempted to set unsupported language '%s'.", new_lang)
     return False
@@ -261,7 +241,6 @@ def load_hotkey_actions(lang=None):
         logger.error("Error loading hotkey actions from '%s': %s", config_path, e, exc_info=True)
         raise
 
-
 def T(key, lang=None):
     current_lang_code = lang if lang else LANGUAGE
     if not UI_TEXTS:
@@ -279,8 +258,6 @@ def T(key, lang=None):
     logger.warning("UI text key '%s' not found for language '%s' or default language.", key, current_lang_code)
     return f"<{key}>"
 
-
-# --- UI Style Constants ---
 MAIN_WINDOW_GEOMETRY = '450x350'
 WINDOW_RESIZABLE_WIDTH = False
 WINDOW_RESIZABLE_HEIGHT = False
@@ -329,8 +306,6 @@ DEFAULT_ICON_TEXT_COLOR = 'white'
 COPY_BUTTON_RESET_DELAY_MS = 2000
 THREAD_JOIN_TIMEOUT_SECONDS = 1.0
 
-
-# --- Initialize configurations ---
 _initialization_errors = []
 logger.info("Starting initialization of UI texts and hotkey actions...")
 try: load_ui_texts()
@@ -348,6 +323,6 @@ except Exception as e:
 if _initialization_errors:
     logger.error("="*30 + " SETTINGS INITIALIZATION ERRORS " + "="*30)
     for _err in _initialization_errors: logger.error(" - %s", _err)
-    logger.error("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ") +2)) # Corrected length
+    logger.error("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ") +2))
 else:
     logger.info("UI texts and hotkey actions initialized successfully.")
