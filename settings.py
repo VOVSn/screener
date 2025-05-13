@@ -12,7 +12,7 @@ LANGUAGE = DEFAULT_LANGUAGE # Current active language (can be changed at runtime
 
 # --- Ollama Configuration ---
 OLLAMA_URL = 'http://localhost:11434/api/generate'
-OLLAMA_MODEL = 'gemma3:4b'
+OLLAMA_MODEL = 'gemma3:12b'
 OLLAMA_TIMEOUT_SECONDS = 120
 OLLAMA_DEFAULT_ERROR_MSG_KEY = 'ollama_no_response_content'
 
@@ -262,9 +262,9 @@ OVERLAY_CURSOR = 'cross'
 OVERLAY_BG_COLOR = 'gray'
 SELECTION_RECT_COLOR = 'red'
 SELECTION_RECT_WIDTH = 2
-DEFAULT_FONT_SIZE = 12
+DEFAULT_FONT_SIZE = 14
 MIN_FONT_SIZE = 8
-MAX_FONT_SIZE = 20
+MAX_FONT_SIZE = 17
 CODE_FONT_FAMILY = 'Courier New'
 MIN_SELECTION_WIDTH = 10
 MIN_SELECTION_HEIGHT = 10
