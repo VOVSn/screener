@@ -1,17 +1,39 @@
 # settings.py
 import json
 import os
-from dotenv import load_dotenv
 
-# --- Load Environment Variables ---
-# Load variables from .env file in the project root
-# It's good practice to place this early.
-project_root = os.path.dirname(os.path.abspath(__file__)) # Assumes settings.py is in root
-dotenv_path = os.path.join(project_root, '.env')
-if os.path.exists(dotenv_path):
-    load_dotenv(dotenv_path)
-else:
-    print("Info: .env file not found. Using default configurations or hardcoded fallbacks.")
+# --- Project Root ---
+# Assumes settings.py is in the project root directory
+project_root = os.path.dirname(os.path.abspath(__file__))
+
+# --- Load Application Settings from JSON ---
+SETTINGS_FILE_PATH = os.path.join(project_root, 'settings.json')
+
+# These defaults are used if settings.json is not found, or a specific key is missing.
+# They are aligned with the example settings.json provided in the prompt.
+_DEFAULT_CORE_SETTINGS = {
+    "OLLAMA_URL": "http://localhost:11434/api/generate",
+    "OLLAMA_MODEL": "gemma3:4b",
+    "OLLAMA_TIMEOUT_SECONDS": 180,
+    "DEFAULT_LANGUAGE": "en",
+    "DEFAULT_THEME": "dark",
+    "DEFAULT_FONT_SIZE": 13,
+    "ICON_FILENAME_PNG": "icon.png"
+}
+_app_config = _DEFAULT_CORE_SETTINGS.copy() # Start with defaults
+
+try:
+    with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f:
+        loaded_json_config = json.load(f)
+        _app_config.update(loaded_json_config) # Override defaults with values from JSON
+    print(f"Info: Loaded configurations from '{SETTINGS_FILE_PATH}'.")
+except FileNotFoundError:
+    print(f"Info: Settings file '{SETTINGS_FILE_PATH}' not found. Using default configurations specified in settings.py.")
+except json.JSONDecodeError as e:
+    print(f"Warning: Error decoding JSON from '{SETTINGS_FILE_PATH}': {e}. Using default configurations specified in settings.py.")
+except Exception as e:
+    print(f"Warning: An unexpected error occurred while loading '{SETTINGS_FILE_PATH}': {e}. Using default configurations specified in settings.py.")
+
 
 # --- App Instance (for callbacks like theme update) ---
 app_instance = None
@@ -21,18 +43,18 @@ SUPPORTED_LANGUAGES = {
     'en': 'English',
     'ru': 'Русский'
 }
-# Load from .env or use hardcoded default
-DEFAULT_LANGUAGE_ENV = os.getenv('DEFAULT_LANGUAGE', 'en').lower()
-DEFAULT_LANGUAGE = DEFAULT_LANGUAGE_ENV if DEFAULT_LANGUAGE_ENV in SUPPORTED_LANGUAGES else 'en'
+# Load from _app_config (which got data from settings.json) or use hardcoded default from _DEFAULT_CORE_SETTINGS
+_default_lang_from_config = _app_config.get('DEFAULT_LANGUAGE', _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']).lower()
+DEFAULT_LANGUAGE = _default_lang_from_config if _default_lang_from_config in SUPPORTED_LANGUAGES else _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
 LANGUAGE = DEFAULT_LANGUAGE
 
 # --- Theme Configuration ---
-# Load from .env or use hardcoded default
-DEFAULT_THEME_ENV = os.getenv('DEFAULT_THEME', 'light').lower()
-DEFAULT_THEME = DEFAULT_THEME_ENV if DEFAULT_THEME_ENV in ['light', 'dark'] else 'light'
+# Load from _app_config or use hardcoded default from _DEFAULT_CORE_SETTINGS
+_default_theme_from_config = _app_config.get('DEFAULT_THEME', _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']).lower()
+DEFAULT_THEME = _default_theme_from_config if _default_theme_from_config in ['light', 'dark'] else _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']
 CURRENT_THEME = DEFAULT_THEME
 
-THEME_COLORS = { # Unchanged, but ensure keys exist for md_* and python_*
+THEME_COLORS = {
     'light': {
         'app_bg': '#F0F0F0', 'app_fg': '#000000', 'text_bg': '#FFFFFF', 'text_fg': '#000000',
         'text_disabled_bg': '#F0F0F0', 'button_bg': '#E1E1E1', 'button_fg': '#000000',
@@ -68,14 +90,14 @@ THEME_COLORS = { # Unchanged, but ensure keys exist for md_* and python_*
 }
 
 
-def get_theme_color(key, theme=None): # Unchanged
+def get_theme_color(key, theme=None):
     current_theme_name = theme if theme else CURRENT_THEME
     color = THEME_COLORS.get(current_theme_name, THEME_COLORS[DEFAULT_THEME]).get(key)
     if color is None:
-        color = THEME_COLORS[DEFAULT_THEME].get(key, '#FF00FF') 
+        color = THEME_COLORS[DEFAULT_THEME].get(key, '#FF00FF')
     return color
 
-def set_theme(new_theme): # Unchanged
+def set_theme(new_theme):
     global CURRENT_THEME
     if new_theme in THEME_COLORS:
         if CURRENT_THEME == new_theme: return True
@@ -94,29 +116,27 @@ def set_theme(new_theme): # Unchanged
     return False
 
 # --- Ollama Configuration ---
-OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/generate')
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma3:12b') # Example: llama3:8b, llava, etc.
-OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '120')) # Ensure it's an int
+OLLAMA_URL = _app_config.get('OLLAMA_URL', _DEFAULT_CORE_SETTINGS['OLLAMA_URL'])
+OLLAMA_MODEL = _app_config.get('OLLAMA_MODEL', _DEFAULT_CORE_SETTINGS['OLLAMA_MODEL'])
+OLLAMA_TIMEOUT_SECONDS = int(_app_config.get('OLLAMA_TIMEOUT_SECONDS', _DEFAULT_CORE_SETTINGS['OLLAMA_TIMEOUT_SECONDS']))
 OLLAMA_DEFAULT_ERROR_MSG_KEY = 'ollama_no_response_content'
 
 
-# --- Hotkey Configuration --- (Unchanged, loaded from JSON)
+# --- Hotkey Configuration --- (Loaded from hotkeys.json)
 HOTKEYS_CONFIG_FILE = 'hotkeys.json'
 HOTKEY_ACTIONS = {}
 DEFAULT_MANUAL_ACTION = 'describe'
 CUSTOM_PROMPT_IDENTIFIER = "CUSTOM_PROMPT_PLACEHOLDER"
 
-# --- UI Text Configuration --- (Unchanged, loaded from JSON)
+# --- UI Text Configuration --- (Loaded from ui_texts.json)
 UI_TEXTS_FILE = 'ui_texts.json'
 UI_TEXTS = {}
 
-def load_ui_texts(): # Unchanged logic
+def load_ui_texts():
     global UI_TEXTS
     UI_TEXTS = {}
     try:
-        # Ensure base_dir is correct if settings.py is not in project root
-        # base_dir = os.path.dirname(os.path.abspath(__file__))
-        texts_path = os.path.join(project_root, UI_TEXTS_FILE) # Use project_root
+        texts_path = os.path.join(project_root, UI_TEXTS_FILE)
         with open(texts_path, 'r', encoding='utf-8') as f:
             loaded_texts = json.load(f)
         if DEFAULT_LANGUAGE not in loaded_texts:
@@ -129,7 +149,7 @@ def load_ui_texts(): # Unchanged logic
     except Exception as e:
         raise Exception(f"An unexpected error occurred while loading UI texts from '{texts_path}': {e}")
 
-def set_language(new_lang): # Unchanged logic
+def set_language(new_lang):
     global LANGUAGE
     if new_lang in SUPPORTED_LANGUAGES:
         LANGUAGE = new_lang
@@ -145,13 +165,12 @@ def set_language(new_lang): # Unchanged logic
     print(f"Warning: Attempted to set unsupported language '{new_lang}'.")
     return False
 
-def load_hotkey_actions(lang=None): # Unchanged logic
+def load_hotkey_actions(lang=None):
     global HOTKEY_ACTIONS
     current_lang = lang if lang else LANGUAGE
     HOTKEY_ACTIONS = {}
     try:
-        # base_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(project_root, HOTKEYS_CONFIG_FILE) # Use project_root
+        config_path = os.path.join(project_root, HOTKEYS_CONFIG_FILE)
         with open(config_path, 'r', encoding='utf-8') as f:
             raw_actions = json.load(f)
         for action_name, details in raw_actions.items():
@@ -175,7 +194,7 @@ def load_hotkey_actions(lang=None): # Unchanged logic
     except Exception as e:
         raise Exception(f"Error loading hotkey actions from '{config_path}': {e}")
 
-def T(key, lang=None): # Unchanged logic
+def T(key, lang=None):
     current_lang_code = lang if lang else LANGUAGE
     if not UI_TEXTS: return f"<{key} (UI_TEXTS_UNINITIALIZED)>"
     lang_texts = UI_TEXTS.get(current_lang_code)
@@ -197,14 +216,12 @@ WINDOW_RESIZABLE_HEIGHT = False
 PADDING_SMALL = 5
 PADDING_LARGE = 10
 
-# Constants moved from screener.py
 RESPONSE_WINDOW_MIN_WIDTH = 400
-RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES = 5 # Min height for the ScrolledText in text lines
-ESTIMATED_CONTROL_FRAME_HEIGHT_PX = 60 # Slider + Label + Padding (adjusted)
-ESTIMATED_BUTTON_FRAME_HEIGHT_PX = 50  # Buttons + Padding
-ESTIMATED_PADDING_PX = 20              # General window padding (top/bottom)
+RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES = 5
+ESTIMATED_CONTROL_FRAME_HEIGHT_PX = 60
+ESTIMATED_BUTTON_FRAME_HEIGHT_PX = 50
+ESTIMATED_PADDING_PX = 20
 
-# Other UI constants (some color ones are now theme-dependent)
 RESPONSE_WINDOW_GEOMETRY = '700x800'
 RESPONSE_TEXT_PADDING_X = 10
 RESPONSE_TEXT_PADDING_Y_TOP = (10, 0)
@@ -216,22 +233,28 @@ FONT_SIZE_LABEL_WIDTH = 10
 CODE_FONT_SIZE_OFFSET = -1
 OVERLAY_ALPHA = 0.4
 OVERLAY_CURSOR = 'cross'
-OVERLAY_BG_COLOR = 'gray' # Capture overlay specific, less theme-dependent
-SELECTION_RECT_COLOR = 'red' # Capture overlay specific
+OVERLAY_BG_COLOR = 'gray'
+SELECTION_RECT_COLOR = 'red'
 SELECTION_RECT_WIDTH = 2
-DEFAULT_FONT_SIZE = 12
+
+# DEFAULT_FONT_SIZE is now loaded from settings.json (via _app_config) or _DEFAULT_CORE_SETTINGS
+DEFAULT_FONT_SIZE = int(_app_config.get('DEFAULT_FONT_SIZE', _DEFAULT_CORE_SETTINGS['DEFAULT_FONT_SIZE']))
 MIN_FONT_SIZE = 8
 MAX_FONT_SIZE = 17
 CODE_FONT_FAMILY = 'Courier New'
 MIN_SELECTION_WIDTH = 10
 MIN_SELECTION_HEIGHT = 10
-CAPTURE_DELAY = 0.2 # seconds
-SCREENSHOT_FORMAT = 'PNG'
-ICON_PATH = os.getenv('ICON_PATH', os.path.join(project_root, 'icon.png')) # Use project_root
-TRAY_ICON_NAME = 'screener_ollama_app' # More unique name
+CAPTURE_DELAY = 0.2
+SCREENSHOT_FORMAT = 'PNG' # This remains a hardcoded constant
+
+# ICON_PATH is derived from ICON_FILENAME_PNG in settings.json (via _app_config) or _DEFAULT_CORE_SETTINGS
+_icon_filename_from_config = _app_config.get('ICON_FILENAME_PNG', _DEFAULT_CORE_SETTINGS['ICON_FILENAME_PNG'])
+ICON_PATH = os.path.join(project_root, _icon_filename_from_config)
+
+TRAY_ICON_NAME = 'screener_ollama_app'
 DEFAULT_ICON_WIDTH = 64
 DEFAULT_ICON_HEIGHT = 64
-DEFAULT_ICON_BG_COLOR = 'dimgray' # Static for default icon generation
+DEFAULT_ICON_BG_COLOR = 'dimgray'
 DEFAULT_ICON_RECT_COLOR = 'dodgerblue'
 DEFAULT_ICON_RECT_WIDTH = 4
 DEFAULT_ICON_FONT_FAMILY = 'Arial'
@@ -240,7 +263,7 @@ DEFAULT_ICON_FONT_WEIGHT = 'bold'
 DEFAULT_ICON_TEXT = 'S'
 DEFAULT_ICON_TEXT_COLOR = 'white'
 COPY_BUTTON_RESET_DELAY_MS = 2000
-THREAD_JOIN_TIMEOUT_SECONDS = 1.0 # For threads on exit
+THREAD_JOIN_TIMEOUT_SECONDS = 1.0
 
 # --- Initialize configurations ---
 _initialization_errors = []
@@ -253,4 +276,5 @@ if _initialization_errors:
     print("="*30 + " SETTINGS INITIALIZATION ERRORS " + "="*30)
     for _err in _initialization_errors: print(f" - {_err}")
     print("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ")))
-    # The main screener.py will catch the import error and show a dialog
+    # The main screener.py may catch import errors from settings.py if they are severe enough
+    # to prevent module loading, and show a dialog. The prints here are for console visibility.
