@@ -93,11 +93,11 @@ except ImportError:
     PYSTRAY_AVAILABLE = False
 
 
-RESPONSE_WINDOW_MIN_WIDTH = 400
-RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES = 5
-ESTIMATED_CONTROL_FRAME_HEIGHT_PX = 60
-ESTIMATED_BUTTON_FRAME_HEIGHT_PX = 50
-ESTIMATED_PADDING_PX = 20
+# RESPONSE_WINDOW_MIN_WIDTH = 400
+# RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES = 5
+# ESTIMATED_CONTROL_FRAME_HEIGHT_PX = 60
+# ESTIMATED_BUTTON_FRAME_HEIGHT_PX = 50
+# ESTIMATED_PADDING_PX = 20
 
 
 class ScreenshotApp:
@@ -461,7 +461,7 @@ class ScreenshotApp:
         self.response_text_widget = scrolledtext.ScrolledText(
             text_frame, wrap=tk.WORD, relief=tk.FLAT, bd=0,
             font=('TkDefaultFont', self.current_response_font_size),
-            height=RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES
+            height=settings.RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES
         )
         self._apply_theme_to_tk_widget(self.response_text_widget)
         try:
@@ -534,10 +534,10 @@ class ScreenshotApp:
         self.response_window.update_idletasks()
         font_for_metrics = tkFont.Font(font=self.response_text_widget['font'])
         line_height_px = font_for_metrics.metrics("linespace")
-        min_text_area_height_px = RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES * line_height_px
-        min_total_height = int(min_text_area_height_px + ESTIMATED_CONTROL_FRAME_HEIGHT_PX + \
-                               ESTIMATED_BUTTON_FRAME_HEIGHT_PX + ESTIMATED_PADDING_PX * 3) 
-        self.response_window.minsize(RESPONSE_WINDOW_MIN_WIDTH, min_total_height)
+        min_text_area_height_px = settings.RESPONSE_WINDOW_MIN_TEXT_AREA_HEIGHT_LINES * line_height_px
+        min_total_height = int(min_text_area_height_px + settings.ESTIMATED_CONTROL_FRAME_HEIGHT_PX + \
+                               settings.ESTIMATED_BUTTON_FRAME_HEIGHT_PX + settings.ESTIMATED_PADDING_PX * 3) 
+        self.response_window.minsize(settings.RESPONSE_WINDOW_MIN_WIDTH, min_total_height)
 
         text_frame.pack(padx=settings.RESPONSE_TEXT_PADDING_X, pady=settings.RESPONSE_TEXT_PADDING_Y_TOP, fill=tk.BOTH, expand=True)
         self.response_text_widget.pack(fill=tk.BOTH, expand=True)
@@ -786,6 +786,8 @@ class ScreenshotApp:
 def main():
     print(f"{settings.T('app_title')} Starting...")
     print(f'Platform: {platform.system()} {platform.release()}')
+    print(f"Ollama URL: {settings.OLLAMA_URL}")
+    print(f"Ollama Model: {settings.OLLAMA_MODEL}")
     print(f"App language: {settings.LANGUAGE} ({settings.SUPPORTED_LANGUAGES.get(settings.LANGUAGE, 'Unknown')})")
     print(f"App theme: {settings.CURRENT_THEME}")
 
