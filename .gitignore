@@ -4,4 +4,3 @@ codebase/
 venv/
 env
 *.pyc
-codecollect*
