@@ -365,7 +365,7 @@ def T(key, lang=None):
     return f"<{key}>"
 
 # --- Constants (Application specific, not typically in settings.json) ---
-MAIN_WINDOW_GEOMETRY = '280x500'
+MAIN_WINDOW_GEOMETRY = '280x550'
 WINDOW_RESIZABLE_WIDTH = False
 WINDOW_RESIZABLE_HEIGHT = False # Consider True if single column buttons make it too tall
 PADDING_SMALL = 5
@@ -405,6 +405,7 @@ DEFAULT_ICON_TEXT = 'S'
 DEFAULT_ICON_TEXT_COLOR = 'white'
 COPY_BUTTON_RESET_DELAY_MS = 2000
 THREAD_JOIN_TIMEOUT_SECONDS = 1.0
+OLLAMA_PING_TIMEOUT_SECONDS = 10 # New constant for ping
 
 # --- Overlay Specific Constants (Used by capture.py) ---
 OVERLAY_ALPHA = 0.4

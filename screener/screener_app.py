@@ -13,9 +13,11 @@ from PIL import Image
 
 # Local Imports
 import screener.settings as settings
-import screener.ollama_utils as ollama_utils
+# import screener.ollama_utils as ollama_utils # ollama_utils functions are imported directly below
 from screener.ollama_utils import (
-    OllamaError, OllamaConnectionError, OllamaTimeoutError, OllamaRequestError
+    OllamaError, OllamaConnectionError, OllamaTimeoutError, OllamaRequestError,
+    check_ollama_connection, PING_SUCCESS, PING_CONN_ERROR, PING_TIMEOUT, 
+    PING_HTTP_ERROR, PING_OTHER_ERROR, request_ollama_analysis # Add new PING constants and import request_ollama_analysis
 )
 from screener.capture import ScreenshotCapturer
 from screener.ui_manager import UIManager
@@ -46,6 +48,51 @@ class ScreenerApp:
         self.ui_manager.setup_main_ui() 
         logger.info("ScreenerApp initialized successfully.")
 
+    # --- Add Ping Ollama methods ---
+    def ping_ollama_service(self):
+        if self.root_destroyed: return
+        logger.info("Ping Ollama service requested from UI.")
+        self.ui_manager.update_status(settings.T('pinging_ollama_status'), 'status_processing_fg')
+        # Run the ping in a separate thread to avoid freezing the UI
+        threading.Thread(target=self._ping_ollama_worker, daemon=True, name="OllamaPingWorkerThread").start()
+
+    def _ping_ollama_worker(self):
+        if self.root_destroyed: return
+        logger.debug("Ollama ping worker thread started.")
+        
+        status_type, details = check_ollama_connection() # Call the new utility
+        
+        message = ""
+        color_key = 'status_default_fg' # Default color
+
+        if status_type == PING_SUCCESS:
+            message = settings.T('ollama_reachable_status')
+            color_key = 'status_ready_fg' # Greenish/Blueish for success
+            logger.info("Ollama ping successful.")
+        elif status_type == PING_CONN_ERROR:
+            message = settings.T('ollama_unreachable_conn_error_status')
+            color_key = 'status_error_fg' # Red for error
+            logger.warning("Ollama ping failed: Connection error. Details: %s", details)
+        elif status_type == PING_TIMEOUT:
+            message = settings.T('ollama_unreachable_timeout_status')
+            color_key = 'status_error_fg'
+            logger.warning("Ollama ping failed: Timeout. Details: %s", details)
+        elif status_type == PING_HTTP_ERROR:
+            message = settings.T('ollama_unreachable_http_error_status').format(status_code=details)
+            color_key = 'status_error_fg'
+            logger.warning("Ollama ping failed: HTTP error. Status code: %s", details)
+        elif status_type == PING_OTHER_ERROR:
+            message = f"{settings.T('ollama_unreachable_other_error_status')}" # Simple message
+            # Optionally, include details if they are user-friendly:
+            # message = f"{settings.T('ollama_unreachable_other_error_status')} ({details})"
+            color_key = 'status_error_fg'
+            logger.warning("Ollama ping failed: Other error. Details: %s", details)
+        
+        # Schedule UI update on the main thread
+        if not self.root_destroyed and self.root and self.root.winfo_exists():
+            self.root.after(0, self.ui_manager.update_status, message, color_key)
+        
+        logger.debug("Ollama ping worker thread finished.")
 
     def _get_prompt_for_action(self, prompt_source):
         if self.root_destroyed: return None
@@ -125,7 +172,7 @@ class ScreenerApp:
         if self.root_destroyed: return
         logger.debug("Ollama worker thread started.")
         try:
-            response_text = ollama_utils.request_ollama_analysis(screenshot, prompt)
+            response_text = request_ollama_analysis(screenshot, prompt) # Use imported function
             logger.info("Ollama analysis successful. Response length: %d", len(response_text or ""))
             
             self._last_ollama_response = response_text # STORED

@@ -63,7 +63,14 @@
       "tray_theme_dark_text": "Dark",
       "status_theme_changed_to": "Theme changed to {theme_name}.",
       "reopen_response_button_text": "Re-open Last Response",
-      "no_response_to_reopen_status": "No previous response to re-open."
+      "no_response_to_reopen_status": "No previous response to re-open.",
+      "ping_ollama_button_text": "Ping Ollama",
+      "pinging_ollama_status": "Pinging Ollama...",
+      "ollama_reachable_status": "Ollama is reachable.",
+      "ollama_unreachable_conn_error_status": "Ollama: Connection Error.",
+      "ollama_unreachable_timeout_status": "Ollama: Timeout.",
+      "ollama_unreachable_http_error_status": "Ollama: Server Error ({status_code}).",
+      "ollama_unreachable_other_error_status": "Ollama: Unreachable."
     },
     "ru": {
       "app_title": "Скриншот в Ollama",
@@ -129,6 +136,13 @@
       "tray_theme_dark_text": "Тёмная",
       "status_theme_changed_to": "Тема изменена на {theme_name}.",
       "reopen_response_button_text": "Открыть последний ответ",
-      "no_response_to_reopen_status": "Нет предыдущего ответа для повторного открытия."
+      "no_response_to_reopen_status": "Нет предыдущего ответа для повторного открытия.",
+      "ping_ollama_button_text": "Ping Ollama",
+      "pinging_ollama_status": "Проверка Ollama...",
+      "ollama_reachable_status": "Ollama доступен.",
+      "ollama_unreachable_conn_error_status": "Ollama: Ошибка соединения.",
+      "ollama_unreachable_timeout_status": "Ollama: Тайм-аут.",
+      "ollama_unreachable_http_error_status": "Ollama: Ошибка сервера ({status_code}).",
+      "ollama_unreachable_other_error_status": "Ollama: Недоступен."
     }
   }

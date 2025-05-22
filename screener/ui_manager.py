@@ -36,6 +36,7 @@ class UIManager:
         self.prompt_frame = None 
         self.action_buttons_frame = None 
         self.reopen_response_button = None # ADDED
+        self.ping_ollama_button = None # Add attribute for the new button
         self.exit_button = None
         
         self._setup_ttk_themes()
@@ -81,8 +82,15 @@ class UIManager:
         self.status_label = ttk.Label(main_frame, anchor=tk.W, style='Status.TLabel')
         self.status_label.pack(pady=(settings.PADDING_SMALL, settings.PADDING_SMALL), fill=tk.X) 
         
+        # --- Ping Ollama Button (Positioned below status_label, above bottom controls) ---
+        self.ping_ollama_button = ttk.Button(main_frame, 
+                                             command=self.app.ping_ollama_service, 
+                                             style='App.TButton')
+        self.ping_ollama_button.pack(pady=(0, settings.PADDING_LARGE), fill=tk.X, side=tk.TOP)
+
+        # --- Container for custom prompt, action buttons, reopen, and exit ---
         bottom_controls_container = ttk.Frame(main_frame, style='App.TFrame')
-        bottom_controls_container.pack(fill=tk.X, side=tk.BOTTOM, pady=(settings.PADDING_LARGE, 0))
+        bottom_controls_container.pack(fill=tk.X, side=tk.BOTTOM, pady=(settings.PADDING_SMALL, 0)) # Adjusted padding
 
         self.prompt_frame = ttk.Frame(bottom_controls_container, style='App.TFrame')
         self.prompt_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, settings.PADDING_SMALL)) 
@@ -95,10 +103,9 @@ class UIManager:
         self.action_buttons_frame = ttk.Frame(bottom_controls_container, style='App.TFrame')
         self.action_buttons_frame.pack(side=tk.TOP, fill=tk.X, expand=True, pady=(settings.PADDING_SMALL, settings.PADDING_SMALL))
         
-        # --- Re-open Response Button (Added between action buttons and exit) ---
         self.reopen_response_button = ttk.Button(bottom_controls_container, 
                                                  command=self.app.reopen_last_response_ui, 
-                                                 style='App.TButton', state=tk.DISABLED) # Initially disabled
+                                                 style='App.TButton', state=tk.DISABLED)
         self.reopen_response_button.pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, settings.PADDING_SMALL))
 
         self.exit_button = ttk.Button(bottom_controls_container, command=lambda: self.app.on_exit(), style='Exit.TButton') 
@@ -209,25 +216,58 @@ class UIManager:
         if self.main_label: self.main_label.config(text=settings.T('main_label_text'))
         if self.custom_prompt_label_widget: self.custom_prompt_label_widget.config(text=settings.T('custom_prompt_label'))
         
-
+        # --- Update Ping Ollama button text ---
+        if self.ping_ollama_button and self.ping_ollama_button.winfo_exists():
+            self.ping_ollama_button.config(text=settings.T('ping_ollama_button_text'))
+        
         if self.status_label: 
             current_text = self.status_label.cget("text")
             is_generic_or_change_msg = False
-            generic_statuses = [settings.T(k, lang=lc) for k in ['initial_status_text', 'ready_status_text_no_tray', 'ready_status_text_tray'] for lc in settings.SUPPORTED_LANGUAGES.keys()]
-            change_msg_templates = ['status_lang_changed_to', 'status_theme_changed_to']
-            change_prefixes = [settings.T(tpl, lang=lc).split('{')[0] for tpl in change_msg_templates for lc in settings.SUPPORTED_LANGUAGES.keys() if settings.T(tpl, lang=lc).split('{')[0]]
+            # Ensure all compared texts are for the current language or a known set of initial/generic states
+            # generic_statuses_current_lang = [settings.T(k) for k in ['initial_status_text', 'ready_status_text_no_tray', 'ready_status_text_tray']]
             
-            if current_text in generic_statuses or any(current_text.startswith(p) for p in change_prefixes if p):
+            # Also consider texts from other languages if the current text might not have been updated yet
+            all_generic_statuses = []
+            for lc in settings.SUPPORTED_LANGUAGES.keys():
+                 all_generic_statuses.extend([settings.T(k, lang=lc) for k in ['initial_status_text', 'ready_status_text_no_tray', 'ready_status_text_tray']])
+            
+            change_msg_templates = ['status_lang_changed_to', 'status_theme_changed_to']
+            all_change_prefixes = []
+            for tpl in change_msg_templates:
+                for lc in settings.SUPPORTED_LANGUAGES.keys():
+                    prefix = settings.T(tpl, lang=lc).split('{')[0]
+                    if prefix: all_change_prefixes.append(prefix)
+
+            if current_text in all_generic_statuses or any(current_text.startswith(p) for p in all_change_prefixes if p):
                 is_generic_or_change_msg = True
 
+            # This logic helps reset status to "Ready" if it was on a generic message before language/theme change
+            # and the change wasn't the *very last* thing that happened.
+            # Also, don't reset if current status is a ping-related message.
+            ping_related_status_keys = [
+                'pinging_ollama_status', 'ollama_reachable_status',
+                'ollama_unreachable_conn_error_status', 'ollama_unreachable_timeout_status',
+                'ollama_unreachable_http_error_status', 'ollama_unreachable_other_error_status'
+            ]
+            is_ping_status = False
+            for key in ping_related_status_keys:
+                # For http_error, it has a placeholder, so check startswith for the part before placeholder
+                if key == 'ollama_unreachable_http_error_status':
+                    if current_text.startswith(settings.T(key).split('{')[0]):
+                        is_ping_status = True; break
+                elif current_text == settings.T(key):
+                    is_ping_status = True; break
+            
             if is_generic_or_change_msg and \
                not (hasattr(self.app, '_theme_just_changed') and self.app._theme_just_changed) and \
-               not (hasattr(self.app, '_lang_just_changed') and self.app._lang_just_changed):
+               not (hasattr(self.app, '_lang_just_changed') and self.app._lang_just_changed) and \
+               not is_ping_status:
                 ready_key = 'ready_status_text_tray' if self.app.PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
                 self.update_status(settings.T(ready_key), 'status_ready_fg')
             
-            if hasattr(self.app, '_theme_just_changed'): del self.app._theme_just_changed
-            if hasattr(self.app, '_lang_just_changed'): del self.app._lang_just_changed
+            if hasattr(self.app, '_theme_just_changed'): self.app._theme_just_changed = False # Reset flag
+            if hasattr(self.app, '_lang_just_changed'): self.app._lang_just_changed = False # Reset flag
+
 
         if self.action_buttons_frame and self.action_buttons_frame.winfo_exists():
             for widget in self.action_buttons_frame.winfo_children():

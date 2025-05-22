@@ -5,6 +5,7 @@ import base64
 import json
 import io
 from PIL import Image
+from urllib.parse import urlparse, urlunparse # Add this import
 
 # Initialize logger for this module
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ except ImportError:
         OLLAMA_URL = 'http://localhost:11434/api/generate'
         OLLAMA_MODEL = 'gemma3:4b' # Ensure this matches a model you have
         OLLAMA_TIMEOUT_SECONDS = 120
+        OLLAMA_PING_TIMEOUT_SECONDS = 10 # Add for fallback
         OLLAMA_DEFAULT_ERROR_MSG_KEY = 'ollama_no_response_content'
         SCREENSHOT_FORMAT = 'PNG'
         LANGUAGE = 'en'
@@ -59,6 +61,83 @@ class OllamaRequestError(OllamaError):
         if self.status_code: s += f" (Status Code: {self.status_code})"
         if self.detail: s += f" - Detail: {self.detail}"
         return s
+
+# Ping status constants
+PING_SUCCESS = "SUCCESS"
+PING_CONN_ERROR = "CONNECTION_ERROR"
+PING_TIMEOUT = "TIMEOUT"
+PING_HTTP_ERROR = "HTTP_ERROR"
+PING_OTHER_ERROR = "OTHER_ERROR"
+
+def get_ollama_base_url():
+    """Derives the base URL (scheme and netloc) from settings.OLLAMA_URL."""
+    try:
+        parsed_url = urlparse(settings.OLLAMA_URL)
+        # Construct base URL (scheme + netloc)
+        base_url = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
+        if not base_url.startswith(('http://', 'https://')): # Basic validation
+            logger.error("Derived Ollama base URL from '%s' is invalid: %s", settings.OLLAMA_URL, base_url)
+            return None
+        logger.debug("Derived Ollama base URL: %s", base_url)
+        return base_url
+    except Exception as e:
+        logger.error("Failed to derive Ollama base URL from '%s': %s", settings.OLLAMA_URL, e, exc_info=True)
+        return None
+
+def check_ollama_connection():
+    """
+    Pings the Ollama base server to check for reachability.
+    The Ollama server typically responds with "Ollama is running" at its root.
+
+    Returns:
+        A tuple: (status_type, details)
+        status_type: One of the PING_ constants.
+        details: None for success, error message string for most failures, or status_code for HTTPError.
+    """
+    base_url = get_ollama_base_url()
+    if not base_url:
+        # This error indicates a problem with how OLLAMA_URL is configured or parsed.
+        return (PING_OTHER_ERROR, "Could not determine Ollama base URL from settings.")
+
+    ping_url = base_url  # Ping the root of the Ollama server
+    timeout = settings.OLLAMA_PING_TIMEOUT_SECONDS
+
+    logger.info("Pinging Ollama at: %s (timeout: %ss)", ping_url, timeout)
+    try:
+        response = requests.get(ping_url, timeout=timeout)
+        response.raise_for_status()  # Raises HTTPError for 4xx/5xx responses
+
+        # Optionally, verify the content if a specific response is expected
+        # For example, if base_url is expected to return "Ollama is running"
+        # if "Ollama is running" in response.text:
+        #    logger.info("Ollama ping successful. Status: %s. Response: %.50s...", response.status_code, response.text)
+        #    return (PING_SUCCESS, None)
+        # else:
+        #    logger.warning("Ollama ping response from %s was unexpected: %.100s", ping_url, response.text)
+        #    return (PING_OTHER_ERROR, f"Unexpected response: {response.text[:100]}")
+        
+        # For now, any 2xx response from the base URL is considered a success
+        logger.info("Ollama ping successful. Status: %s. Response: %.50s...", response.status_code, response.text)
+        return (PING_SUCCESS, None)
+
+    except requests.exceptions.ConnectionError as e:
+        logger.warning("Ollama ping failed (ConnectionError) for URL %s: %s", ping_url, e, exc_info=False)
+        return (PING_CONN_ERROR, str(e))
+    except requests.exceptions.Timeout as e:
+        logger.warning("Ollama ping failed (Timeout) for URL %s: %s", ping_url, e, exc_info=False)
+        return (PING_TIMEOUT, str(e))
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response is not None else "N/A"
+        response_text = e.response.text[:200] if e.response is not None else "N/A"
+        logger.warning("Ollama ping failed (HTTPError %s) for URL %s. Response: %s. Error: %s", status_code, ping_url, response_text, e, exc_info=False)
+        return (PING_HTTP_ERROR, status_code) # Pass status_code as detail
+    except requests.exceptions.RequestException as e:  # Catch-all for other request issues
+        logger.warning("Ollama ping failed (RequestException) for URL %s: %s", ping_url, e, exc_info=False)
+        return (PING_OTHER_ERROR, str(e))
+    except Exception as e:  # Catch-all for unexpected errors within this function
+        logger.error("An unexpected error occurred during Ollama ping to %s: %s", ping_url, e, exc_info=True)
+        return (PING_OTHER_ERROR, f"Unexpected error: {e}")
+
 
 def request_ollama_analysis(image: Image.Image, prompt: str) -> str:
     """
@@ -167,8 +246,21 @@ if __name__ == '__main__':
     
     logger.info("Running ollama_utils.py standalone test...")
     
+    logger.info("--- Testing Ollama Ping ---")
+    try:
+        ping_status, ping_details = check_ollama_connection()
+        if ping_status == PING_SUCCESS:
+            logger.info("Ping Test: Ollama is REACHABLE.")
+        else:
+            logger.warning("Ping Test: Ollama is UNREACHABLE. Status: %s, Details: %s", ping_status, ping_details)
+    except Exception as e_ping:
+        logger.error("Ping Test: Exception during ping test: %s", e_ping, exc_info=True)
+    logger.info("--- Finished Ollama Ping Test ---")
+
+
     # Create a dummy image for testing
     try:
+        logger.info("--- Testing Ollama Analysis Request ---")
         dummy_image = Image.new('RGB', (100, 100), color = 'red')
         logger.debug("Created dummy image for testing.")
 
@@ -181,8 +273,9 @@ if __name__ == '__main__':
         logger.info(response)
 
     except OllamaConnectionError:
-        logger.error("TEST FAILED: Could not connect to Ollama. Is Ollama running and accessible at %s?", settings.OLLAMA_URL)
+        logger.error("ANALYSIS TEST FAILED: Could not connect to Ollama. Is Ollama running and accessible at %s?", settings.OLLAMA_URL)
     except OllamaError as oe:
-        logger.error("TEST FAILED: An Ollama error occurred: %s", oe, exc_info=True)
+        logger.error("ANALYSIS TEST FAILED: An Ollama error occurred: %s", oe, exc_info=True)
     except Exception as ex:
-        logger.error("TEST FAILED: An unexpected error occurred: %s", ex, exc_info=True)
+        logger.error("ANALYSIS TEST FAILED: An unexpected error occurred: %s", ex, exc_info=True)
+    logger.info("--- Finished Ollama Analysis Request Test ---")
