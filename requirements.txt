@@ -10,6 +10,7 @@ pefile==2023.2.7
 pillow==11.2.1
 PyAutoGUI==0.9.54
 PyGetWindow==0.0.9
+Pygments==2.19.1
 pyinstaller==6.13.0
 pyinstaller-hooks-contrib==2025.4
 PyMsgBox==1.0.9
@@ -25,4 +26,3 @@ requests==2.32.3
 six==1.17.0
 urllib3==2.4.0
 zipp==3.21.0
-Pygments
