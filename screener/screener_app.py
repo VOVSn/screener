@@ -7,7 +7,7 @@ import platform
 import time # For short delays
 import os
 import sys
-from functools import partial # IMPORTED
+from functools import partial 
 
 from PIL import Image
 
@@ -41,6 +41,7 @@ class ScreenerApp:
         
         self._theme_just_changed = False 
         self._lang_just_changed = False
+        self._last_ollama_response = None # ADDED: To store the last response text
 
         self.ui_manager.setup_main_ui() 
         logger.info("ScreenerApp initialized successfully.")
@@ -127,10 +128,13 @@ class ScreenerApp:
             response_text = ollama_utils.request_ollama_analysis(screenshot, prompt)
             logger.info("Ollama analysis successful. Response length: %d", len(response_text or ""))
             
+            self._last_ollama_response = response_text # STORED
+            
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 ready_key = 'ready_status_text_tray' if self.PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
                 self.root.after(0, self.ui_manager.update_status, settings.T(ready_key), 'status_ready_fg')
                 self.root.after(0, self.ui_manager.display_ollama_response, response_text)
+                self.root.after(0, self.ui_manager.enable_reopen_response_button) # Enable button
 
         except OllamaConnectionError as e:
             msg = f"{settings.T('ollama_conn_failed_status')}"
@@ -141,7 +145,6 @@ class ScreenerApp:
                                               settings.T('dialog_ollama_conn_error_title'), 
                                               settings.T('dialog_ollama_conn_error_msg').format(url=settings.OLLAMA_URL), 
                                               parent=self.root)
-                # FIXED: Wrap partial in lambda
                 self.root.after(0, lambda: show_error_callable())
         except OllamaTimeoutError as e:
             msg = f"{settings.T('ollama_timeout_status')}"
@@ -152,7 +155,6 @@ class ScreenerApp:
                                               settings.T('dialog_ollama_timeout_title'), 
                                               settings.T('dialog_ollama_timeout_msg').format(url=settings.OLLAMA_URL), 
                                               parent=self.root)
-                # FIXED: Wrap partial in lambda
                 self.root.after(0, lambda: show_error_callable())
         except OllamaRequestError as e:
             msg = f"{settings.T('ollama_request_failed_status')}: {e.detail or e}"
@@ -163,7 +165,6 @@ class ScreenerApp:
                                               settings.T('dialog_ollama_error_title'), 
                                               f"{msg}\n(Status: {e.status_code})", 
                                               parent=self.root)
-                # FIXED: Wrap partial in lambda
                 self.root.after(0, lambda: show_error_callable())
         except OllamaError as e: 
             msg = f"{settings.T('ollama_request_failed_status')}: {e}"
@@ -174,7 +175,6 @@ class ScreenerApp:
                                               settings.T('dialog_ollama_error_title'), 
                                               msg, 
                                               parent=self.root)
-                # FIXED: Wrap partial in lambda
                 self.root.after(0, lambda: show_error_callable())
         except ValueError as e: 
             msg = f"{settings.T('error_preparing_image_status')}: {e}"
@@ -185,7 +185,6 @@ class ScreenerApp:
                                               settings.T('dialog_internal_error_title'), 
                                               msg, 
                                               parent=self.root)
-                # FIXED: Wrap partial in lambda
                 self.root.after(0, lambda: show_error_callable())
         except Exception as e:
             logger.critical("Unexpected error in Ollama worker thread.", exc_info=True)
@@ -195,9 +194,19 @@ class ScreenerApp:
                                               settings.T('dialog_unexpected_error_title'), 
                                               f"{settings.T('unexpected_error_status')}: {e}", 
                                               parent=self.root)
-                # FIXED: Wrap partial in lambda
                 self.root.after(0, lambda: show_error_callable())
         logger.debug("Ollama worker thread finished.")
+
+    # ADDED: Method to handle re-opening the response
+    def reopen_last_response_ui(self):
+        if self.root_destroyed: return
+        if self._last_ollama_response is not None:
+            logger.info("Re-opening last Ollama response.")
+            self.ui_manager.display_ollama_response(self._last_ollama_response)
+        else:
+            logger.info("No last Ollama response to re-open.")
+            self.ui_manager.update_status(settings.T('no_response_to_reopen_status'), 'status_default_fg')
+
 
     def change_theme(self, theme_name, icon=None, item=None): 
         if self.root_destroyed: return

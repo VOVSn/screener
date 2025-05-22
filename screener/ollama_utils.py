@@ -147,7 +147,7 @@ def request_ollama_analysis(image: Image.Image, prompt: str) -> str:
         
         logger.error("Ollama request failed. Status: %s, URL: %s, Detail: %.200s, OriginalErrorType: %s",
                      status_code, settings.OLLAMA_URL, error_detail, type(e).__name__, exc_info=False) # exc_info=False if e is enough
-        raise OllamaRequestError(f"Ollama request failed: {e}", status_code=status_code, detail=error_detail) from e
+        raise OllamaRequestError(f"Ollama request failed:\n {e}", status_code=status_code, detail=error_detail) from e
     except json.JSONDecodeError as e: # If response.json() fails on a 200 OK response (unlikely but possible)
         response_text_preview = response.text[:200] if hasattr(response, 'text') else "N/A"
         logger.error("Failed to decode Ollama response JSON despite a successful HTTP status. Response text preview: %s", response_text_preview, exc_info=True)

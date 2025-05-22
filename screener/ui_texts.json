@@ -61,7 +61,9 @@
       "tray_theme_text": "Theme",
       "tray_theme_light_text": "Light",
       "tray_theme_dark_text": "Dark",
-      "status_theme_changed_to": "Theme changed to {theme_name}."
+      "status_theme_changed_to": "Theme changed to {theme_name}.",
+      "reopen_response_button_text": "Re-open Last Response",
+      "no_response_to_reopen_status": "No previous response to re-open."
     },
     "ru": {
       "app_title": "Скриншот в Ollama",
@@ -125,6 +127,8 @@
       "tray_theme_text": "Тема",
       "tray_theme_light_text": "Светлая",
       "tray_theme_dark_text": "Тёмная",
-      "status_theme_changed_to": "Тема изменена на {theme_name}."
+      "status_theme_changed_to": "Тема изменена на {theme_name}.",
+      "reopen_response_button_text": "Открыть последний ответ",
+      "no_response_to_reopen_status": "Нет предыдущего ответа для повторного открытия."
     }
   }

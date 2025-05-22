@@ -365,7 +365,7 @@ def T(key, lang=None):
     return f"<{key}>"
 
 # --- Constants (Application specific, not typically in settings.json) ---
-MAIN_WINDOW_GEOMETRY = '350x500'
+MAIN_WINDOW_GEOMETRY = '280x500'
 WINDOW_RESIZABLE_WIDTH = False
 WINDOW_RESIZABLE_HEIGHT = False # Consider True if single column buttons make it too tall
 PADDING_SMALL = 5

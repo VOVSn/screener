@@ -1,4 +1,4 @@
-# ui_manager.py
+# screener/ui_manager.py
 import logging
 import tkinter as tk
 from tkinter import scrolledtext, font as tkFont, ttk, messagebox
@@ -10,7 +10,7 @@ import screener.ui_utils as ui_utils
 logger = logging.getLogger(__name__)
 
 class UIManager:
-    ACTION_BUTTONS_MAX_COLS = 1 # CHANGED to 1 for single column
+    ACTION_BUTTONS_MAX_COLS = 1 
     MIN_UI_FONT_SIZE = 7 
 
     def __init__(self, app, root):
@@ -31,11 +31,11 @@ class UIManager:
         self.main_label = None
         self.custom_prompt_label_widget = None
         self.custom_prompt_entry = None
-        self.hotkeys_list_label_widget = None
-        self.hotkeys_text_area = None
         self.status_label = None
         
+        self.prompt_frame = None 
         self.action_buttons_frame = None 
+        self.reopen_response_button = None # ADDED
         self.exit_button = None
         
         self._setup_ttk_themes()
@@ -62,9 +62,8 @@ class UIManager:
 
     def setup_main_ui(self):
         logger.debug("Setting up main UI structure...")
-        # MAIN_WINDOW_GEOMETRY might need adjustment if buttons make it too tall
         self.root.geometry(settings.MAIN_WINDOW_GEOMETRY) 
-        self.root.resizable(settings.WINDOW_RESIZABLE_WIDTH, settings.WINDOW_RESIZABLE_HEIGHT) # Consider True for Height
+        self.root.resizable(settings.WINDOW_RESIZABLE_WIDTH, settings.WINDOW_RESIZABLE_HEIGHT)
         
         adjusted_main_font_size = max(self.MIN_UI_FONT_SIZE, int(settings.DEFAULT_FONT_SIZE * 0.8))
         logger.info(f"Original default font size: {settings.DEFAULT_FONT_SIZE}, Adjusted main UI font size: {adjusted_main_font_size}")
@@ -79,34 +78,31 @@ class UIManager:
         self.main_label = ttk.Label(main_frame, style='App.TLabel')
         self.main_label.pack(pady=(0, settings.PADDING_SMALL))
         
-        prompt_frame = ttk.Frame(main_frame, style='App.TFrame')
-        prompt_frame.pack(fill=tk.X, pady=settings.PADDING_SMALL)
-        self.custom_prompt_label_widget = ttk.Label(prompt_frame, style='App.TLabel')
+        self.status_label = ttk.Label(main_frame, anchor=tk.W, style='Status.TLabel')
+        self.status_label.pack(pady=(settings.PADDING_SMALL, settings.PADDING_SMALL), fill=tk.X) 
+        
+        bottom_controls_container = ttk.Frame(main_frame, style='App.TFrame')
+        bottom_controls_container.pack(fill=tk.X, side=tk.BOTTOM, pady=(settings.PADDING_LARGE, 0))
+
+        self.prompt_frame = ttk.Frame(bottom_controls_container, style='App.TFrame')
+        self.prompt_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, settings.PADDING_SMALL)) 
+        
+        self.custom_prompt_label_widget = ttk.Label(self.prompt_frame, style='App.TLabel')
         self.custom_prompt_label_widget.pack(side=tk.LEFT, padx=(0, settings.PADDING_SMALL))
-        self.custom_prompt_entry = ttk.Entry(prompt_frame, textvariable=self.custom_prompt_var, width=40, style='App.TEntry')
+        self.custom_prompt_entry = ttk.Entry(self.prompt_frame, textvariable=self.custom_prompt_var, width=40, style='App.TEntry')
         self.custom_prompt_entry.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
-        self.hotkeys_list_label_widget = ttk.Label(main_frame, style='App.TLabel')
-        self.hotkeys_list_label_widget.pack(anchor=tk.W, pady=(settings.PADDING_SMALL, 0))
+        self.action_buttons_frame = ttk.Frame(bottom_controls_container, style='App.TFrame')
+        self.action_buttons_frame.pack(side=tk.TOP, fill=tk.X, expand=True, pady=(settings.PADDING_SMALL, settings.PADDING_SMALL))
         
-        hotkeys_font_size = max(self.MIN_UI_FONT_SIZE -1 if self.MIN_UI_FONT_SIZE > 1 else 1, adjusted_main_font_size - 2)
-        self.hotkeys_text_area = tk.Text(main_frame, height=6, wrap=tk.WORD, relief=tk.SOLID, borderwidth=1,
-                                         font=('TkDefaultFont', hotkeys_font_size))
-        self.hotkeys_text_area.pack(fill=tk.X, pady=(0, settings.PADDING_SMALL), expand=False)
-        self.hotkeys_text_area.config(state=tk.DISABLED)
-        
-        self.status_label = ttk.Label(main_frame, anchor=tk.W, style='Status.TLabel')
-        self.status_label.pack(pady=settings.PADDING_SMALL, fill=tk.X)
-        
-        bottom_buttons_container = ttk.Frame(main_frame, style='App.TFrame')
-        bottom_buttons_container.pack(fill=tk.X, side=tk.BOTTOM, pady=(settings.PADDING_LARGE, 0))
+        # --- Re-open Response Button (Added between action buttons and exit) ---
+        self.reopen_response_button = ttk.Button(bottom_controls_container, 
+                                                 command=self.app.reopen_last_response_ui, 
+                                                 style='App.TButton', state=tk.DISABLED) # Initially disabled
+        self.reopen_response_button.pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, settings.PADDING_SMALL))
 
-        self.action_buttons_frame = ttk.Frame(bottom_buttons_container, style='App.TFrame')
-        self.action_buttons_frame.pack(side=tk.TOP, fill=tk.X, expand=True, pady=(0, settings.PADDING_SMALL))
-        
-        # Apply specific style for Exit button
-        self.exit_button = ttk.Button(bottom_buttons_container, command=lambda: self.app.on_exit(), style='Exit.TButton') 
-        self.exit_button.pack(side=tk.TOP, fill=tk.X, expand=True) 
+        self.exit_button = ttk.Button(bottom_controls_container, command=lambda: self.app.on_exit(), style='Exit.TButton') 
+        self.exit_button.pack(side=tk.TOP, fill=tk.X, expand=True, pady=(settings.PADDING_SMALL,0)) 
         
         close_action = self.hide_to_tray if self.app.PYSTRAY_AVAILABLE else lambda: self.app.on_exit(is_wm_delete=True)
         self.root.protocol('WM_DELETE_WINDOW', close_action)
@@ -153,7 +149,7 @@ class UIManager:
         
         exit_button_bg = settings.get_theme_color('button_exit_bg')
         exit_button_fg = settings.get_theme_color('button_exit_fg')
-        exit_button_active_bg = settings.get_theme_color('button_exit_active_bg') # Get this from settings too
+        exit_button_active_bg = settings.get_theme_color('button_exit_active_bg') 
         
         disabled_fg = settings.get_theme_color('disabled_fg'); frame_bg = settings.get_theme_color('frame_bg')
         scale_trough = settings.get_theme_color('scale_trough'); border_color = settings.get_theme_color('code_block_border')
@@ -163,11 +159,9 @@ class UIManager:
         self.style.configure('App.TFrame', background=frame_bg)
         self.style.configure('App.TLabel', background=frame_bg, foreground=fg)
         
-        # Standard Button Style
         self.style.configure('App.TButton', background=button_bg, foreground=button_fg, bordercolor=border_color, relief=tk.RAISED, lightcolor=button_bg, darkcolor=button_bg, focuscolor=fg)
         self.style.map('App.TButton', background=[('active', button_active_bg), ('pressed', button_active_bg), ('disabled', settings.get_theme_color('text_disabled_bg'))], foreground=[('disabled', disabled_fg)], relief=[('pressed', tk.SUNKEN), ('!pressed', tk.RAISED)])
         
-        # Exit Button Style
         self.style.configure('Exit.TButton', background=exit_button_bg, foreground=exit_button_fg, bordercolor=border_color, relief=tk.RAISED, lightcolor=exit_button_bg, darkcolor=exit_button_bg, focuscolor=exit_button_fg)
         self.style.map('Exit.TButton', background=[('active', exit_button_active_bg), ('pressed', exit_button_active_bg), ('disabled', settings.get_theme_color('text_disabled_bg'))], foreground=[('disabled', disabled_fg)], relief=[('pressed', tk.SUNKEN), ('!pressed', tk.RAISED)])
 
@@ -180,7 +174,6 @@ class UIManager:
         self.style.configure('Status.TLabel', background=frame_bg, foreground=status_fg_color)
         if self.status_label: self.status_label.configure(foreground=status_fg_color)
 
-        if self.hotkeys_text_area: self._apply_theme_to_tk_widget(self.hotkeys_text_area)
 
         if self.response_window and self.response_window.winfo_exists():
             self.response_window.configure(background=bg)
@@ -195,9 +188,9 @@ class UIManager:
             except (tk.TclError, AttributeError) as e: logger.warning("Minor issue theming scrollbars for response: %s", e, exc_info=False)
             if self.response_font_slider: self.response_font_slider.configure(style='TScale')
             if self.response_size_label: self.response_size_label.configure(style='App.TLabel')
-            if self.response_copy_button: # And other buttons in response window
+            if self.response_copy_button: 
                 for sibling in self.response_copy_button.master.winfo_children():
-                    if isinstance(sibling, ttk.Button): sibling.configure(style='App.TButton') # Use App.TButton for response window buttons
+                    if isinstance(sibling, ttk.Button): sibling.configure(style='App.TButton')
             if self.response_text_widget and self.response_text_widget.winfo_exists():
                 try:
                     current_text_content = self.response_text_widget.get("1.0", tk.END).strip()
@@ -215,19 +208,7 @@ class UIManager:
         self.root.title(settings.T('app_title'))
         if self.main_label: self.main_label.config(text=settings.T('main_label_text'))
         if self.custom_prompt_label_widget: self.custom_prompt_label_widget.config(text=settings.T('custom_prompt_label'))
-        if self.hotkeys_list_label_widget: self.hotkeys_list_label_widget.config(text=settings.T('hotkeys_list_label'))
         
-        if self.hotkeys_text_area:
-            self.hotkeys_text_area.config(state=tk.NORMAL)
-            self.hotkeys_text_area.delete('1.0', tk.END)
-            hotkey_display_text = []
-            if settings.HOTKEY_ACTIONS:
-                for _, details in settings.HOTKEY_ACTIONS.items():
-                    hotkey_display_text.append(f"{details['hotkey']}: {details['description']}")
-                self.hotkeys_text_area.insert(tk.END, "\n".join(hotkey_display_text))
-            else:
-                self.hotkeys_text_area.insert(tk.END, settings.T('hotkey_failed_status'))
-            self.hotkeys_text_area.config(state=tk.DISABLED)
 
         if self.status_label: 
             current_text = self.status_label.cget("text")
@@ -252,34 +233,45 @@ class UIManager:
             for widget in self.action_buttons_frame.winfo_children():
                 widget.destroy()
 
-            row, col = 0, 0 # col will always be 0 due to MAX_COLS = 1
+            row = 0 
             action_button_count = 0
-            # Sort to try and keep custom prompt button consistently placed if desired, e.g., last
-            sorted_actions = sorted(settings.HOTKEY_ACTIONS.items(), key=lambda item: item[0] == "custom_prompt_hotkey") 
-
-            if settings.HOTKEY_ACTIONS:
-                for action_name, details in sorted_actions: 
-                    btn_text = details.get('description', action_name)
-                    btn_prompt_source = details.get('prompt')
-
-                    if not btn_prompt_source: 
-                        logger.warning("Skipping button for action '%s' due to missing prompt.", action_name)
-                        continue
-                    
-                    actual_prompt_for_button = btn_prompt_source 
-                    
-                    btn_command = partial(self.app._trigger_capture_from_ui, actual_prompt_for_button)
-                    
-                    button = ttk.Button(self.action_buttons_frame, text=btn_text, command=btn_command, style='App.TButton')
-                    # Grid layout with single column
-                    button.grid(row=row, column=0, sticky="ew", padx=2, pady=2)
-                    action_button_count += 1
-                    row += 1 # Increment row for next button
+            
+            def create_action_button(action_details, frame, current_row):
+                description = action_details.get('description', 'N/A')
+                hotkey = action_details.get('hotkey', 'N/A')
+                btn_text = f"{description}\n({hotkey})"
                 
-                # Configure column weights for the action_buttons_frame grid
-                if action_button_count > 0: # Only configure if buttons exist
-                     self.action_buttons_frame.grid_columnconfigure(0, weight=1)
+                btn_prompt_source = action_details.get('prompt')
+                if not btn_prompt_source: 
+                    logger.warning("Skipping button for action due to missing prompt: %s", description)
+                    return current_row 
+                
+                btn_command = partial(self.app._trigger_capture_from_ui, btn_prompt_source)
+                button = ttk.Button(frame, text=btn_text, command=btn_command, style='App.TButton')
+                button.grid(row=current_row, column=0, sticky="ew", padx=2, pady=2)
+                return current_row + 1 
 
+            custom_prompt_action_name = "custom_prompt_hotkey" 
+            if settings.HOTKEY_ACTIONS and custom_prompt_action_name in settings.HOTKEY_ACTIONS:
+                details = settings.HOTKEY_ACTIONS[custom_prompt_action_name]
+                row = create_action_button(details, self.action_buttons_frame, row)
+                action_button_count += 1
+            
+            if settings.HOTKEY_ACTIONS:
+                remaining_actions = sorted(
+                    [(name, det) for name, det in settings.HOTKEY_ACTIONS.items() if name != custom_prompt_action_name],
+                    key=lambda item: item[1].get('description', item[0])
+                )
+                for action_name, details in remaining_actions:
+                    row = create_action_button(details, self.action_buttons_frame, row)
+                    action_button_count += 1
+                
+            if action_button_count > 0:
+                 self.action_buttons_frame.grid_columnconfigure(0, weight=1)
+
+        # Update Re-open Response button text
+        if self.reopen_response_button:
+            self.reopen_response_button.config(text=settings.T('reopen_response_button_text'))
 
         if self.exit_button:
             exit_key = 'exit_button_text_tray' if self.app.PYSTRAY_AVAILABLE else 'exit_button_text'
@@ -295,9 +287,9 @@ class UIManager:
                     self.response_copy_button.config(text=original_copy_text)
             if self.response_copy_button and self.response_copy_button.master:
                 for widget in self.response_copy_button.master.winfo_children():
-                    if isinstance(widget, ttk.Button) and widget != self.response_copy_button: # This is the Close button
-                        widget.config(text=settings.T('close_button_text')); # It uses App.TButton style
-                        break # Assuming only one other button (Close)
+                    if isinstance(widget, ttk.Button) and widget != self.response_copy_button: 
+                        widget.config(text=settings.T('close_button_text'));
+                        break 
         logger.info("UI texts updated in UIManager.")
 
     def display_ollama_response(self, response_text):
@@ -442,3 +434,16 @@ class UIManager:
             except tk.TclError:
                 logger.warning("TclError destroying response window, likely already gone.")
             self.response_window = None
+            
+    # ADDED: Method to enable/disable the re-open button
+    def enable_reopen_response_button(self):
+        if self.app.root_destroyed: return
+        if self.reopen_response_button and self.reopen_response_button.winfo_exists():
+            self.reopen_response_button.config(state=tk.NORMAL)
+            logger.debug("Re-open last response button enabled.")
+
+    def disable_reopen_response_button(self):
+        if self.app.root_destroyed: return
+        if self.reopen_response_button and self.reopen_response_button.winfo_exists():
+            self.reopen_response_button.config(state=tk.DISABLED)
+            logger.debug("Re-open last response button disabled.")

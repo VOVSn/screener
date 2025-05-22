@@ -2,7 +2,7 @@
     "OLLAMA_URL": "http://localhost:11434/api/generate",
     "OLLAMA_MODEL": "gemma3:12b",
     "OLLAMA_TIMEOUT_SECONDS": 180,
-    "DEFAULT_LANGUAGE": "en",
+    "DEFAULT_LANGUAGE": "ru",
     "DEFAULT_THEME": "light",
     "DEFAULT_FONT_SIZE": 13,
     "ICON_FILENAME_PNG": "icon.png"

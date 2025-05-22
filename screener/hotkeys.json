@@ -29,7 +29,7 @@
       },
       "prompt": {
         "en": "Analyze the image. If it describes a programming problem or task, generate relevant code (preferably Python) to address it. Explain the code briefly. If not a coding task, describe the image.",
-        "ru": "Проанализируйте изображение. Если оно описывает проблему или задачу программирования, сгенерируйте соответствующий код (желательно Python) для ее решения. Кратко объясните код. Если это не задача по программированию, опишите изображение."
+        "ru": "Проанализируйте изображение. Если оно описывает проблему или задачу программирования, сгенерируйте соответствующий код (желательно Python) для ее решения. Объясните код на русском языке. Если это не задача по программированию, опишите изображение."
       }
     },
     "translate_russian": {
@@ -46,8 +46,8 @@
     "custom_prompt_hotkey": {
       "hotkey": "<ctrl>+<alt>+e",
       "description": {
-        "en": "Use custom prompt (from input field)",
-        "ru": "Использовать свой запрос (из поля ввода)"
+        "en": "Use custom prompt",
+        "ru": "Использовать свой запрос"
       },
       "prompt": "CUSTOM_PROMPT_PLACEHOLDER"
     }
