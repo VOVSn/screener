@@ -1,4 +1,4 @@
-# tray_manager.py
+# screener/tray_manager.py
 import logging
 import threading
 from functools import partial
@@ -85,9 +85,28 @@ class TrayManager:
             pystray.MenuItem(settings.T('tray_language_text'), pystray.Menu(*lang_submenu_items)),
             pystray.MenuItem(settings.T('tray_theme_text'), pystray.Menu(*theme_submenu_items)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(settings.T('tray_exit_text'), lambda: self.app.on_exit(from_tray=True))
+            pystray.MenuItem(settings.T('tray_exit_text'), self.request_app_exit_from_menu) # MODIFIED HERE
         ]
         return tuple(menu_items)
+
+    def request_app_exit_from_menu(self, icon=None, item=None):
+        """Called by the tray menu's exit action to initiate app shutdown."""
+        if not self.PYSTRAY_AVAILABLE: return
+        logger.info("TrayManager: Exit requested from tray menu action.")
+        
+        # Step 1: Stop the pystray icon. This is done from the pystray thread itself.
+        # This allows the icon.run() loop to terminate cleanly.
+        if self.tray_icon:
+            self.tray_icon.stop()
+            logger.debug("TrayManager: pystray icon.stop() called from menu action.")
+        
+        # Step 2: Schedule the main application's exit procedure on the Tkinter main thread.
+        # This avoids deadlocks and ensures UI/app state changes are thread-safe.
+        if self.app.root and self.app.root.winfo_exists():
+            self.app.root.after(50, lambda: self.app.on_exit(from_tray=True, _initiated_by_tray_thread=True))
+        else:
+            logger.warning("TrayManager: Root window not found when scheduling app exit. Calling app.on_exit directly.")
+            self.app.on_exit(from_tray=True, _initiated_by_tray_thread=True)
 
     def _rebuild_on_main_thread(self):
         if self.app.root_destroyed or not self.PYSTRAY_AVAILABLE: return
@@ -128,11 +147,10 @@ class TrayManager:
         try:
             if self.tray_icon:
                 self.tray_icon.run()
+                logger.info("TrayManager: pystray icon.run() has exited.") # Log when it exits
         except Exception as e:
             logger.error("TrayManager: Exception during pystray icon run(). Tray may be non-functional.", exc_info=True)
-            # Optionally, notify the user if this happens post-startup
             if not self.app.root_destroyed and self.app.root and self.app.root.winfo_exists():
-                # This runs in tray_thread, so use root.after for messagebox
                 self.app.root.after(0, self.app.ui_manager.update_status, settings.T("icon_load_fail_status"), "status_error_fg")
 
 
@@ -147,23 +165,40 @@ class TrayManager:
             logger.info("TrayManager: Skipping tray setup (root destroyed or pystray unavailable).")
             return
         logger.info("TrayManager: Setting up system tray icon initially.")
-        self._rebuild_on_main_thread()
+        self._rebuild_on_main_thread() # This will start the tray_thread
 
-    def stop_tray(self):
+    def stop_and_join_thread_blocking(self):
+        """
+        Stops the pystray icon and attempts to join its thread.
+        This method should be called from a thread OTHER THAN the pystray thread itself (e.g., main thread).
+        """
         if not self.PYSTRAY_AVAILABLE: return
-        logger.info("TrayManager: Stopping system tray icon...")
+        logger.info("TrayManager: Stopping system tray icon and joining thread (blocking call)...")
+        
         if self.tray_icon:
             try:
-                self.tray_icon.stop()
+                self.tray_icon.stop() 
+                logger.debug("TrayManager: tray_icon.stop() called.")
             except Exception as e:
-                logger.error("TrayManager: Error stopping pystray icon.", exc_info=True)
+                logger.error("TrayManager: Error during tray_icon.stop().", exc_info=True)
+        
         if self.tray_thread and self.tray_thread.is_alive():
-            self.tray_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS)
-            if self.tray_thread.is_alive():
-                logger.warning("TrayManager: Pystray thread did not exit cleanly.")
-        self.tray_icon = None
+            if threading.current_thread() == self.tray_thread:
+                logger.warning("TrayManager: stop_and_join_thread_blocking called from tray_thread itself. Skipping join. Thread should exit due to icon.stop().")
+            else:
+                logger.debug("TrayManager: Attempting to join PystrayThread.")
+                self.tray_thread.join(timeout=settings.THREAD_JOIN_TIMEOUT_SECONDS)
+                if self.tray_thread.is_alive():
+                    logger.warning("TrayManager: Pystray thread did not exit cleanly after join attempt.")
+                else:
+                    logger.info("TrayManager: Pystray thread joined successfully.")
+        elif self.tray_thread:
+             logger.debug("TrayManager: Pystray thread was not alive before join attempt.")
+        
+        self.tray_icon = None 
         self.tray_thread = None
-        logger.info("TrayManager: System tray icon stopped.")
+        logger.info("TrayManager: System tray icon resources considered released.")
+
 
     def update_menu_if_visible(self):
         """Requests pystray to update its menu if the icon is currently visible."""

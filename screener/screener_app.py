@@ -1,4 +1,4 @@
-# screener_app.py
+# screener/screener_app.py
 import logging
 import tkinter as tk
 from tkinter import messagebox
@@ -29,21 +29,19 @@ class ScreenerApp:
     def __init__(self):
         logger.info("Initializing ScreenerApp...")
         self.root = tk.Tk()
-        # settings.app_instance = self # No longer needed in settings.py
-
-        self.capturer = ScreenshotCapturer(self) # Pass self (ScreenerApp instance)
+        
+        self.capturer = ScreenshotCapturer(self) 
         self.running = True 
         self.root_destroyed = False
         
-        # Initialize Managers
         self.ui_manager = UIManager(self, self.root)
         self.hotkey_manager = HotkeyManager(self)
         self.tray_manager = TrayManager(self) if self.PYSTRAY_AVAILABLE else None
         
-        self._theme_just_changed = False # Internal flags for UI update logic
+        self._theme_just_changed = False 
         self._lang_just_changed = False
 
-        self.ui_manager.setup_main_ui() # This will also call apply_theme and update_texts
+        self.ui_manager.setup_main_ui() 
         logger.info("ScreenerApp initialized successfully.")
 
 
@@ -73,13 +71,11 @@ class ScreenerApp:
         self.trigger_capture(prompt_source)
 
     def trigger_capture_from_hotkey(self, prompt_source):
-        # This method is called by HotkeyManager
         if self.root_destroyed: return
         logger.info("Capture triggered by hotkey.")
         self.trigger_capture(prompt_source)
 
     def trigger_capture_from_tray(self, prompt_source):
-        # This method is called by TrayManager
         if self.root_destroyed: return
         logger.info("Capture triggered from tray menu.")
         self.trigger_capture(prompt_source)
@@ -97,21 +93,24 @@ class ScreenerApp:
         
         if self.ui_manager.is_main_window_viewable():
             logger.debug("Main window is viewable. Withdrawing it before capture.")
-            # self.root.withdraw() # UIManager handles its own window state
-            self.ui_manager.root.withdraw() # Or a dedicated hide_for_capture method in UIManager
-            self.ui_manager._explicitly_hidden_to_tray = False # This hide is for capture
-            # Short delay to ensure window is hidden
+            self.ui_manager.root.withdraw() 
+            self.ui_manager._explicitly_hidden_to_tray = False 
             self.root.after(100, lambda: self.capturer.capture_region(actual_prompt))
         else:
             logger.debug("Main window not viewable. Initiating capture directly.")
-            self.capturer.capture_region(actual_prompt)
+            if threading.current_thread() != threading.main_thread():
+                if self.root and self.root.winfo_exists():
+                    self.root.after(0, self.capturer.capture_region, actual_prompt)
+                else:
+                    logger.warning("Cannot schedule capture_region: main app root is unavailable.")
+            else:
+                self.capturer.capture_region(actual_prompt)
 
 
     def process_screenshot_with_ollama(self, screenshot: Image.Image, prompt: str):
         if self.root_destroyed: return
         logger.info("Processing screenshot with Ollama. Prompt: '%.50s...'", prompt)
 
-        # Restore main window if it was hidden for capture, not by explicit user hide-to-tray
         if not self.ui_manager.is_main_window_viewable() and \
            not self.ui_manager.is_main_window_explicitly_hidden():
             logger.debug("Main window was hidden for capture; restoring it.")
@@ -127,7 +126,6 @@ class ScreenerApp:
             response_text = ollama_utils.request_ollama_analysis(screenshot, prompt)
             logger.info("Ollama analysis successful. Response length: %d", len(response_text or ""))
             
-            # Schedule UI updates on the main thread
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 ready_key = 'ready_status_text_tray' if self.PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
                 self.root.after(0, self.ui_manager.update_status, settings.T(ready_key), 'status_ready_fg')
@@ -138,149 +136,180 @@ class ScreenerApp:
             logger.error("Ollama connection error: %s. URL: %s", e, settings.OLLAMA_URL, exc_info=False)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_conn_error_title'), settings.T('dialog_ollama_conn_error_msg').format(url=settings.OLLAMA_URL))
+                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_conn_error_title'), settings.T('dialog_ollama_conn_error_msg').format(url=settings.OLLAMA_URL), parent=self.root)
         except OllamaTimeoutError as e:
             msg = f"{settings.T('ollama_timeout_status')}"
             logger.error("Ollama request timed out: %s. URL: %s", e, settings.OLLAMA_URL, exc_info=False)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_timeout_title'), settings.T('dialog_ollama_timeout_msg').format(url=settings.OLLAMA_URL))
+                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_timeout_title'), settings.T('dialog_ollama_timeout_msg').format(url=settings.OLLAMA_URL), parent=self.root)
         except OllamaRequestError as e:
             msg = f"{settings.T('ollama_request_failed_status')}: {e.detail or e}"
             logger.error("Ollama request error. Status: %s, Detail: %s", e.status_code, e.detail, exc_info=False)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_error_title'), f"{msg}\n(Status: {e.status_code})")
-        except OllamaError as e: # Generic library error
+                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_error_title'), f"{msg}\n(Status: {e.status_code})", parent=self.root)
+        except OllamaError as e: 
             msg = f"{settings.T('ollama_request_failed_status')}: {e}"
             logger.error("Generic Ollama library error: %s", e, exc_info=True)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_error_title'), msg)
-        except ValueError as e: # e.g., image encoding error
+                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_error_title'), msg, parent=self.root)
+        except ValueError as e: 
             msg = f"{settings.T('error_preparing_image_status')}: {e}"
             logger.error("Value error during Ollama request prep: %s", e, exc_info=True)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
+                self.root.after(0, messagebox.showerror, settings.T('dialog_internal_error_title'), msg, parent=self.root) 
         except Exception as e:
             logger.critical("Unexpected error in Ollama worker thread.", exc_info=True)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, settings.T('unexpected_error_status'), 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_unexpected_error_title'), f"{settings.T('unexpected_error_status')}: {e}")
+                self.root.after(0, messagebox.showerror, settings.T('dialog_unexpected_error_title'), f"{settings.T('unexpected_error_status')}: {e}", parent=self.root)
         logger.debug("Ollama worker thread finished.")
 
-    def change_theme(self, theme_name, icon=None, item=None): # Tray args optional
+    def change_theme(self, theme_name, icon=None, item=None): 
         if self.root_destroyed: return
         logger.info("Changing theme to: %s", theme_name)
         if settings.set_theme(theme_name): 
-            self._theme_just_changed = True # Flag for UIManager text update logic
-            self.ui_manager.apply_theme_globally() # Apply theme to all UI
+            self._theme_just_changed = True 
+            self.ui_manager.apply_theme_globally() 
             theme_name_localized = settings.T(f'tray_theme_{theme_name}_text')
             self.ui_manager.update_status(
                 settings.T('status_theme_changed_to').format(theme_name=theme_name_localized),
                 'status_ready_fg'
             )
-            if self.tray_manager: self.tray_manager.update_menu_if_visible() # pystray handles radio checks
+            if self.tray_manager: self.tray_manager.update_menu_if_visible() 
         else:
             logger.warning("Failed to change theme to %s.", theme_name)
 
 
-    def change_language(self, lang_code, icon=None, item=None): # Tray args optional
+    def change_language(self, lang_code, icon=None, item=None): 
         if self.root_destroyed: return
         if settings.LANGUAGE == lang_code: 
             logger.debug("Language already set to %s.", lang_code); return
         
         logger.info("Changing language to: %s", lang_code)
         if settings.set_language(lang_code):
-            self._lang_just_changed = True # Flag for UIManager text update logic
-            self.hotkey_manager.start_listener() # Prompts might have changed
-            self.ui_manager.apply_theme_globally(language_changed=True) # This will call update_ui_texts
+            self._lang_just_changed = True 
+            self.hotkey_manager.start_listener() 
+            self.ui_manager.apply_theme_globally(language_changed=True) 
             
             lang_name = settings.SUPPORTED_LANGUAGES.get(settings.LANGUAGE, settings.LANGUAGE)
             self.ui_manager.update_status(settings.T('status_lang_changed_to').format(lang_name=lang_name), 'status_ready_fg')
             
-            if self.tray_manager: self.tray_manager.request_rebuild() # Tray menu item texts change
+            if self.tray_manager: self.tray_manager.request_rebuild() 
         else:
             logger.error("Failed to change language to %s.", lang_code)
             self.ui_manager.update_status(f"Failed to change language to {lang_code}.", 'status_error_fg')
 
 
-    def on_exit(self, icon=None, item=None, from_tray=False, is_wm_delete=False):
+    def on_exit(self, icon=None, item=None, from_tray=False, is_wm_delete=False, _initiated_by_tray_thread=False):
         if not self.running: 
             logger.debug("on_exit called but app already exiting."); return
         
         self.running = False 
-        logger.info("Initiating application exit sequence. From: %s", 
-                    "Tray" if from_tray else ("WM_DELETE" if is_wm_delete else "Button/Code"))
+        source_description = "Button/Code"
+        if from_tray: source_description = "Tray"
+        if is_wm_delete: source_description = "WM_DELETE"
+        if _initiated_by_tray_thread: source_description += " (tray thread initiated)"
+        logger.info("Initiating application exit sequence. From: %s", source_description)
         
-        if self.ui_manager: self.ui_manager.update_status(settings.T('exiting_app_status'), 'status_default_fg')
+        if self.ui_manager and self.ui_manager.root and self.ui_manager.root.winfo_exists():
+            self.ui_manager.update_status(settings.T('exiting_app_status'), 'status_default_fg')
 
         logger.info(settings.T('stopping_hotkeys_status'))
         if self.hotkey_manager: self.hotkey_manager.stop_listener()
 
         if self.PYSTRAY_AVAILABLE and self.tray_manager:
             logger.info(settings.T('stopping_tray_status'))
-            self.tray_manager.stop_tray()
+            if _initiated_by_tray_thread:
+                # The tray thread has already called tray_icon.stop() via TrayManager.request_app_exit_from_menu().
+                # It will exit on its own. We should not join it here from the main thread
+                # as it might still be processing the stop signal. The post-mainloop cleanup will do a final join.
+                logger.debug("on_exit: Tray shutdown was initiated by tray thread. Tray thread manages its own stop. Final join later.")
+            else:
+                # This on_exit is from UI button, WM_DELETE (if no tray), or other external means.
+                # We are likely on the main thread or a non-tray worker thread.
+                # It's safe to call the blocking stop & join for the tray.
+                self.tray_manager.stop_and_join_thread_blocking()
         
         if not self.root_destroyed and self.root and self.root.winfo_exists():
-            logger.debug("Scheduling root window destruction.")
-            # Ensure destroy is called from main thread
+            logger.debug("Scheduling root window destruction if not on main thread, else direct.")
             if threading.current_thread() == threading.main_thread():
                 self._destroy_root_safely()
             else:
-                self.root.after(0, self._destroy_root_safely)
+                if self.root and self.root.winfo_exists(): # Re-check root before scheduling
+                    self.root.after(0, self._destroy_root_safely)
+                else: 
+                    self.root_destroyed = True
+                    logger.debug("Root vanished before after(0, _destroy_root_safely) could be scheduled from non-main thread.")
         else:
-            # If root was already gone or never fully existed.
             self.root_destroyed = True 
-            logger.debug("Root already destroyed or never fully existed at on_exit.")
+            logger.debug("Root already destroyed or never fully existed at on_exit call.")
 
     def _destroy_root_safely(self):
         if not self.root_destroyed and self.root and self.root.winfo_exists():
             logger.info("Destroying Tkinter root window and any child windows...")
             try:
                 if self.ui_manager: self.ui_manager.destroy_response_window_if_exists()
-                self.root.destroy()
+                
+                if hasattr(self, 'capturer') and self.capturer and \
+                   hasattr(self.capturer, 'selection_window') and \
+                   self.capturer.selection_window and \
+                   self.capturer.selection_window.winfo_exists():
+                    logger.info("Capture overlay seems to be active during exit. Attempting to close it.")
+                    self.capturer._cleanup_overlay_windows() 
+                    self.capturer.reset_state()
+                
+                self.root.quit() 
+                self.root.destroy() 
                 logger.info("Tkinter root window destroyed successfully.")
-            except tk.TclError as e: logger.warning("TclError during root destroy: %s", e, exc_info=False)
+            except tk.TclError as e: logger.warning("TclError during root destroy: %s (likely already gone)", e, exc_info=False)
             except Exception as e: logger.error("Unexpected error during root destroy.", exc_info=True)
         self.root_destroyed = True
 
 
     def run(self):
-        if self.root_destroyed: logger.warning("Run called on already destroyed app. Exiting."); return
+        if self.root_destroyed: 
+            logger.warning("Run called on already destroyed app. Exiting."); return
         logger.info("ScreenerApp run method started.")
         
         self.hotkey_manager.start_listener()
         if self.tray_manager: self.tray_manager.setup_tray()
         
         status_msg_key = 'ready_status_text_tray' if self.PYSTRAY_AVAILABLE else 'ready_status_text_no_tray'
-        self.ui_manager.update_status(settings.T(status_msg_key), 'status_ready_fg')
+        if self.ui_manager and self.ui_manager.root and self.ui_manager.root.winfo_exists(): 
+            self.ui_manager.update_status(settings.T(status_msg_key), 'status_ready_fg')
         
-        # Show main window initially unless configured otherwise (not implemented, but good place for it)
-        # self.ui_manager.show_window() # If it starts hidden
-
         try:
             logger.info("Starting Tkinter mainloop...")
             self.root.mainloop()
-            logger.info("Tkinter mainloop finished.")
+            logger.info("Tkinter mainloop finished.") 
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt received in mainloop, initiating exit.")
-            if self.running : self.on_exit()
+            if self.running : self.on_exit(is_wm_delete=True) 
         except Exception as e:
             logger.critical("Unhandled exception in Tkinter mainloop.", exc_info=True)
-            if self.running : self.on_exit()
+            if self.running : self.on_exit(is_wm_delete=True) 
 
-        # Post-mainloop cleanup
         logger.info("Post-mainloop cleanup started.")
-        if self.running: # If mainloop exited without on_exit
+        if self.running: 
             logger.warning("Mainloop exited but app still marked running. Forcing on_exit.")
-            self.on_exit() 
+            # If mainloop exits unexpectedly, _initiated_by_tray_thread will be False.
+            self.on_exit(is_wm_delete=True, _initiated_by_tray_thread=False) 
         
-        # Ensure threads are joined (on_exit should handle, but as safeguard)
-        if self.hotkey_manager: self.hotkey_manager.stop_listener() 
-        if self.tray_manager: self.tray_manager.stop_tray()
+        # Defensive cleanup calls. These run on the main thread.
+        if self.hotkey_manager: 
+            logger.debug("Post-mainloop: Ensuring hotkey listener is stopped.")
+            self.hotkey_manager.stop_listener() 
+        if self.tray_manager: 
+            logger.debug("Post-mainloop: Ensuring tray manager is stopped and thread joined.")
+            self.tray_manager.stop_and_join_thread_blocking()
         
-        if not self.root_destroyed: self._destroy_root_safely()
+        if not self.root_destroyed: 
+            logger.debug("Post-mainloop: Ensuring root is destroyed.")
+            self._destroy_root_safely()
 
         logger.info(settings.T('app_exit_complete_status'))
         logger.info(settings.T('app_finished_status'))
