@@ -5,7 +5,7 @@ from functools import partial
 from pynput import keyboard
 from tkinter import messagebox
 
-import settings
+import screener.settings as settings
 
 logger = logging.getLogger(__name__)
 

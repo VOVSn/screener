@@ -5,8 +5,8 @@ from functools import partial
 import os
 from PIL import Image
 
-import settings
-import ui_utils # For create_default_icon
+import screener.settings as settings
+import screener.ui_utils as ui_utils# For create_default_icon
 
 # pystray import is optional, handle its absence
 try:

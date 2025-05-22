@@ -11,15 +11,15 @@ import sys
 from PIL import Image
 
 # Local Imports
-import settings
-import ollama_utils
-from ollama_utils import (
+import screener.settings as settings
+import screener.ollama_utils as ollama_utils
+from screener.ollama_utils import (
     OllamaError, OllamaConnectionError, OllamaTimeoutError, OllamaRequestError
 )
-from capture import ScreenshotCapturer
-from ui_manager import UIManager
-from hotkey_manager import HotkeyManager
-from tray_manager import TrayManager, PYSTRAY_AVAILABLE as TRAY_AVAILABLE_FROM_MODULE
+from screener.capture import ScreenshotCapturer
+from screener.ui_manager import UIManager
+from screener.hotkey_manager import HotkeyManager
+from screener.tray_manager import TrayManager, PYSTRAY_AVAILABLE as TRAY_AVAILABLE_FROM_MODULE
 
 logger = logging.getLogger(__name__)
 

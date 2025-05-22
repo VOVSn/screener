@@ -30,9 +30,9 @@ from PIL import Image
 
 # Now import modules that depend on logging being set up (especially settings)
 # The import of settings will trigger its logging configuration.
-import settings
-from screener_app import ScreenerApp # The main application class
-from tray_manager import PYSTRAY_AVAILABLE # Check if pystray loaded
+import screener.settings as settings
+from screener.screener_app import ScreenerApp # The main application class
+from screener.tray_manager import PYSTRAY_AVAILABLE # Check if pystray loaded
 
 logger = logging.getLogger(__name__) # Get logger for main.py
 

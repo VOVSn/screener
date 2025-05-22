@@ -4,8 +4,8 @@ import tkinter as tk
 from tkinter import scrolledtext, font as tkFont, ttk, messagebox
 from functools import partial
 
-import settings
-import ui_utils
+import screener.settings as settings
+import screener.ui_utils as ui_utils
 
 logger = logging.getLogger(__name__)
 

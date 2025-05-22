@@ -10,8 +10,8 @@ import pyautogui # For screenshots
 logger = logging.getLogger(__name__)
 
 try:
-    import settings # Assuming settings.py initializes logging
-    T = settings.T
+    import screener.settings as settings
+    
     # Keys for localized strings used in this module (fetched from settings.T)
     DIALOG_INTERNAL_ERROR_TITLE_KEY = 'dialog_internal_error_title'
     DIALOG_INTERNAL_ERROR_MSG_KEY = 'dialog_internal_error_msg'
