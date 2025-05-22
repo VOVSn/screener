@@ -14,3 +14,6 @@ build/
 *.spec
 *.egg-info/
 .env 
+logs/
+codecollect_lite.py
+captured_sessions/

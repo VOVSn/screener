@@ -48,6 +48,7 @@ IGNORED_FOLDERS = [
     '.idea',
     'migrations',
     'seed_data',
+    'captured_sessions',
     OUTPUT_DIR_NAME, # Ignore the output directory itself!
     # Add more folders as needed
 ]
@@ -79,7 +80,7 @@ CUSTOM_PROMPT = """
 
 1.  **Consistency:** Ensure code style is consistent across all files.
 2.  **Readability:** Code should be clear, well-commented where necessary, and easy to understand.
-3.  **PEP 8 (Python):** Adhere to PEP 8 standards for Python code (e.g., max line length 79-99 chars, single/double quotes consistency, spacing).
+3.  **PEP 8 (Python):** Adhere to PEP 8 standards for Python code (e.g., max line length 79 chars, single/double quotes consistency, spacing).
 4.  **Error Handling:** Check for robust error handling and edge cases.
 5.  **Security:** Look for potential security vulnerabilities (e.g., hardcoded secrets, injection points).
 6.  **Efficiency:** Identify any obvious performance bottlenecks.
