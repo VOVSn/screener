@@ -48,6 +48,7 @@ IGNORED_FOLDERS = [
     '.idea',
     'migrations',
     'seed_data',
+    'captured_sessions',
     OUTPUT_DIR_NAME, # Ignore the output directory itself!
     # Add more folders as needed
 ]
