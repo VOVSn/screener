@@ -2,7 +2,7 @@
 import json
 import os
 import sys
-import logging # Add logging import
+import logging
 
 # --- Import and Setup Logging ---
 try:
@@ -34,23 +34,21 @@ final_log_dir = prospective_log_dir
 
 if not os.path.exists(prospective_log_dir):
     try:
-        os.makedirs(prospective_log_dir)
-        print(f"INFO: Log directory created: {prospective_log_dir}")
+        os.makedirs(prospective_log_dir, exist_ok=True)
+        # print(f"INFO: Log directory created: {prospective_log_dir}") # Logger not fully ready for file here
     except OSError as e:
-        print(f"WARNING: Failed to create log directory {prospective_log_dir}: {e}. "
-              f"Falling back to logging in {_APP_DIR}")
+        # print(f"WARNING: Failed to create log directory {prospective_log_dir}: {e}. Falling back to logging in {_APP_DIR}")
         final_log_dir = _APP_DIR
 
 logging_config.setup_logging(app_dir_path=final_log_dir, level=logging.INFO)
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # Now logger is configured
 
 logger.info("settings.py: _BUNDLE_DIR = %s", _BUNDLE_DIR)
 logger.info("settings.py: _APP_DIR = %s", _APP_DIR)
 logger.info("settings.py: Log directory used for application logs = %s", final_log_dir)
 
 
-project_root = os.path.dirname(os.path.abspath(__file__))
+# --- Configuration Loading and Saving ---
 SETTINGS_FILE_PATH = os.path.join(_APP_DIR, 'settings.json')
 
 _DEFAULT_CORE_SETTINGS = {
@@ -62,35 +60,90 @@ _DEFAULT_CORE_SETTINGS = {
     "DEFAULT_FONT_SIZE": 13,
     "ICON_FILENAME_PNG": "icon.png"
 }
-_app_config = _DEFAULT_CORE_SETTINGS.copy()
+_app_config = {} # Will be populated by load_app_config
 
-try:
-    with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f:
-        loaded_json_config = json.load(f)
-        _app_config.update(loaded_json_config)
-    logger.info("Successfully loaded configurations from '%s'.", SETTINGS_FILE_PATH)
-except FileNotFoundError:
-    logger.info("Settings file '%s' not found. Using default configurations.", SETTINGS_FILE_PATH)
-except json.JSONDecodeError as e:
-    logger.warning("Error decoding JSON from '%s': %s. Using default configurations.", SETTINGS_FILE_PATH, e, exc_info=False)
-except Exception as e:
-    logger.error("An unexpected error occurred while loading '%s': %s. Using default configurations.", SETTINGS_FILE_PATH, e, exc_info=True)
+def save_app_config():
+    """Saves the current _app_config to settings.json."""
+    global _app_config
+    try:
+        # Ensure the directory for settings.json exists (it's _APP_DIR)
+        settings_file_dir = os.path.dirname(SETTINGS_FILE_PATH)
+        if not os.path.exists(settings_file_dir):
+             os.makedirs(settings_file_dir, exist_ok=True)
+             logger.info(f"Created directory for settings file: {settings_file_dir}")
 
-# --- App Instance (Removed - App itself will coordinate) ---
-# app_instance = None
+        with open(SETTINGS_FILE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(_app_config, f, indent=4, ensure_ascii=False)
+        logger.info("Application configuration saved to '%s'.", SETTINGS_FILE_PATH)
+    except Exception as e:
+        logger.error("Failed to save application configuration to '%s': %s", SETTINGS_FILE_PATH, e, exc_info=True)
+
+def load_app_config():
+    """Loads configuration from settings.json, falling back to defaults and creating/repairing the file if necessary."""
+    global _app_config
+    base_defaults = _DEFAULT_CORE_SETTINGS.copy()
+    
+    try:
+        with open(SETTINGS_FILE_PATH, 'r', encoding='utf-8') as f:
+            loaded_json_config = json.load(f)
+        
+        _app_config = base_defaults # Start with base defaults
+        _app_config.update(loaded_json_config) # Override with loaded values
+        
+        logger.info("Successfully loaded configurations from '%s'.", SETTINGS_FILE_PATH)
+        
+        resave_needed = False
+        for key, default_value in _DEFAULT_CORE_SETTINGS.items():
+            if key not in loaded_json_config:
+                _app_config[key] = default_value # Ensure default is in current config if missing from file
+                resave_needed = True
+                logger.info("Key '%s' was missing from settings.json, added from defaults.", key)
+        
+        if resave_needed:
+            logger.info("Settings file structure updated (e.g., missing keys added). Resaving canonical configuration.")
+            save_app_config()
+
+    except FileNotFoundError:
+        logger.info("Settings file '%s' not found. Using default configurations and creating the file.", SETTINGS_FILE_PATH)
+        _app_config = base_defaults.copy()
+        save_app_config() 
+    except json.JSONDecodeError as e:
+        logger.warning("Error decoding JSON from '%s': %s. File is corrupt. Resetting to default configurations and recreating the file.", SETTINGS_FILE_PATH, e, exc_info=False)
+        _app_config = base_defaults.copy()
+        save_app_config() 
+    except Exception as e:
+        logger.error("An unexpected error occurred while loading '%s': %s. Using default configurations and attempting to recreate the file.", SETTINGS_FILE_PATH, e, exc_info=True)
+        _app_config = base_defaults.copy()
+        save_app_config()
+
+load_app_config() # Load configuration early
+
+# --- Populate global settings variables from _app_config ---
+OLLAMA_URL = _app_config['OLLAMA_URL']
+OLLAMA_MODEL = _app_config['OLLAMA_MODEL']
+OLLAMA_TIMEOUT_SECONDS = int(_app_config['OLLAMA_TIMEOUT_SECONDS'])
+DEFAULT_FONT_SIZE = int(_app_config['DEFAULT_FONT_SIZE'])
+_icon_filename_from_config = _app_config['ICON_FILENAME_PNG']
 
 # --- Language Configuration ---
 SUPPORTED_LANGUAGES = {'en': 'English', 'ru': 'Русский'}
-_default_lang_from_config = _app_config.get('DEFAULT_LANGUAGE', _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']).lower()
-DEFAULT_LANGUAGE = _default_lang_from_config if _default_lang_from_config in SUPPORTED_LANGUAGES else _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
-LANGUAGE = DEFAULT_LANGUAGE
-logger.debug("Initial language set to: %s", LANGUAGE)
+LANGUAGE = _app_config.get('DEFAULT_LANGUAGE', _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']).lower()
+if LANGUAGE not in SUPPORTED_LANGUAGES:
+    logger.warning("Invalid language '%s' in settings. Resetting to '%s' and saving.", LANGUAGE, _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE'])
+    LANGUAGE = _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
+    _app_config['DEFAULT_LANGUAGE'] = LANGUAGE
+    save_app_config()
+logger.debug("Initial language set to: %s (from effective config)", LANGUAGE)
 
 # --- Theme Configuration ---
-_default_theme_from_config = _app_config.get('DEFAULT_THEME', _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']).lower()
-DEFAULT_THEME = _default_theme_from_config if _default_theme_from_config in ['light', 'dark'] else _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']
-CURRENT_THEME = DEFAULT_THEME
-logger.debug("Initial theme set to: %s", CURRENT_THEME)
+CURRENT_THEME = _app_config.get('DEFAULT_THEME', _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']).lower()
+THEME_OPTIONS = ['light', 'dark']
+if CURRENT_THEME not in THEME_OPTIONS:
+    logger.warning("Invalid theme '%s' in settings. Resetting to '%s' and saving.", CURRENT_THEME, _DEFAULT_CORE_SETTINGS['DEFAULT_THEME'])
+    CURRENT_THEME = _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']
+    _app_config['DEFAULT_THEME'] = CURRENT_THEME
+    save_app_config()
+logger.debug("Initial theme set to: %s (from effective config)", CURRENT_THEME)
 
 THEME_COLORS = {
     'light': {
@@ -128,29 +181,38 @@ THEME_COLORS = {
 }
 
 def get_theme_color(key, theme=None):
-    current_theme_name = theme if theme else CURRENT_THEME
-    color = THEME_COLORS.get(current_theme_name, THEME_COLORS[DEFAULT_THEME]).get(key)
+    global CURRENT_THEME
+    ultimate_fallback_theme_name = _DEFAULT_CORE_SETTINGS['DEFAULT_THEME']
+    current_theme_name_to_use = theme if theme else CURRENT_THEME
+
+    if current_theme_name_to_use not in THEME_COLORS:
+        logger.warning(f"get_theme_color: Invalid theme name '{current_theme_name_to_use}'. Using ultimate fallback '{ultimate_fallback_theme_name}'.")
+        current_theme_name_to_use = ultimate_fallback_theme_name
+    
+    theme_dict = THEME_COLORS[current_theme_name_to_use]
+    color = theme_dict.get(key)
+    
     if color is None:
-        logger.warning("Theme color key '%s' not found for theme '%s' or default. Falling back to magenta.", key, current_theme_name)
-        color = THEME_COLORS[DEFAULT_THEME].get(key, '#FF00FF') # Fallback to default then magenta
+        logger.warning("Theme color key '%s' not found for theme '%s'. Trying ultimate fallback theme '%s' for this key.", key, current_theme_name_to_use, ultimate_fallback_theme_name)
+        color = THEME_COLORS[ultimate_fallback_theme_name].get(key, '#FF00FF')
     return color
 
 def set_theme(new_theme):
-    global CURRENT_THEME
-    if new_theme in THEME_COLORS:
-        if CURRENT_THEME == new_theme:
-            logger.debug("Theme '%s' is already active.", new_theme)
-            return True # Still a success, no change needed
-        CURRENT_THEME = new_theme
-        logger.info("Application theme changed to: %s", CURRENT_THEME)
-        # App instance will call UI updates
+    global CURRENT_THEME, _app_config
+    new_theme_lower = new_theme.lower()
+    if new_theme_lower in THEME_OPTIONS:
+        if CURRENT_THEME == new_theme_lower and _app_config.get('DEFAULT_THEME') == new_theme_lower:
+            logger.debug("Theme '%s' is already active and saved.", new_theme_lower)
+            return True
+
+        CURRENT_THEME = new_theme_lower
+        _app_config['DEFAULT_THEME'] = new_theme_lower
+        save_app_config()
+        logger.info("Application theme changed to: %s and saved.", CURRENT_THEME)
         return True
-    logger.warning("Attempted to set unsupported theme '%s'.", new_theme)
+    logger.warning("Attempted to set unsupported theme '%s'. Valid themes: %s", new_theme, THEME_OPTIONS)
     return False
 
-OLLAMA_URL = _app_config.get('OLLAMA_URL', _DEFAULT_CORE_SETTINGS['OLLAMA_URL'])
-OLLAMA_MODEL = _app_config.get('OLLAMA_MODEL', _DEFAULT_CORE_SETTINGS['OLLAMA_MODEL'])
-OLLAMA_TIMEOUT_SECONDS = int(_app_config.get('OLLAMA_TIMEOUT_SECONDS', _DEFAULT_CORE_SETTINGS['OLLAMA_TIMEOUT_SECONDS']))
 OLLAMA_DEFAULT_ERROR_MSG_KEY = 'ollama_no_response_content'
 
 HOTKEYS_CONFIG_FILE_NAME = 'hotkeys.json'
@@ -164,16 +226,22 @@ _UI_TEXTS_FULL_PATH = os.path.join(_BUNDLE_DIR, UI_TEXTS_FILE_NAME)
 UI_TEXTS = {}
 
 def load_ui_texts():
-    global UI_TEXTS
+    global UI_TEXTS, LANGUAGE
     UI_TEXTS = {}
     try:
         texts_path = _UI_TEXTS_FULL_PATH
         with open(texts_path, 'r', encoding='utf-8') as f:
             loaded_texts = json.load(f)
-        if DEFAULT_LANGUAGE not in loaded_texts:
-            msg = f"Default language '{DEFAULT_LANGUAGE}' not found in '{texts_path}'."
+        
+        core_default_lang = _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
+        if LANGUAGE not in loaded_texts and core_default_lang not in loaded_texts:
+            msg = (f"Critical: Neither current language '{LANGUAGE}' nor core default language "
+                   f"'{core_default_lang}' found in UI texts file '{texts_path}'.")
             logger.error(msg)
             raise ValueError(msg)
+        elif LANGUAGE not in loaded_texts:
+             logger.warning(f"Current language '{LANGUAGE}' not found in UI texts file. Using core default '{core_default_lang}'.")
+        
         UI_TEXTS = loaded_texts
         logger.debug("UI texts loaded successfully from %s", texts_path)
     except FileNotFoundError:
@@ -187,77 +255,97 @@ def load_ui_texts():
         raise
 
 def set_language(new_lang):
-    global LANGUAGE
-    if new_lang in SUPPORTED_LANGUAGES:
-        if LANGUAGE == new_lang:
-            logger.debug("Language '%s' is already active.", new_lang)
-            return True # Still a success, no change needed
-        LANGUAGE = new_lang
-        logger.info("Application language changed to: %s (%s)", LANGUAGE, SUPPORTED_LANGUAGES[new_lang])
+    global LANGUAGE, _app_config
+    new_lang_lower = new_lang.lower()
+    if new_lang_lower in SUPPORTED_LANGUAGES:
+        if LANGUAGE == new_lang_lower and _app_config.get('DEFAULT_LANGUAGE') == new_lang_lower:
+            logger.debug("Language '%s' is already active and saved.", new_lang_lower)
+            return True
+
+        LANGUAGE = new_lang_lower
+        _app_config['DEFAULT_LANGUAGE'] = new_lang_lower
+        save_app_config()
+        logger.info("Application language changed to: %s (%s) and saved.", LANGUAGE, SUPPORTED_LANGUAGES[LANGUAGE])
         try:
-            load_hotkey_actions(LANGUAGE) # Reload hotkeys for new language prompts
-            # App instance will call UI updates
+            load_hotkey_actions(LANGUAGE)
             return True
         except Exception as e:
-            logger.error("Error reloading hotkey actions after language change to %s: %s", new_lang, e, exc_info=True)
-            # Revert language if subsequent steps fail? Or let app handle it.
-            # For now, assume if load_hotkey_actions fails, it's a problem.
+            logger.error("Error reloading hotkey actions after language change to %s: %s", new_lang_lower, e, exc_info=True)
             return False
-    logger.warning("Attempted to set unsupported language '%s'.", new_lang)
+    logger.warning("Attempted to set unsupported language '%s'. Supported: %s", new_lang, list(SUPPORTED_LANGUAGES.keys()))
     return False
 
-def load_hotkey_actions(lang=None):
-    global HOTKEY_ACTIONS
-    current_lang = lang if lang else LANGUAGE
+def load_hotkey_actions(lang_code_to_use=None):
+    global HOTKEY_ACTIONS, LANGUAGE
+    current_lang_for_hotkeys = lang_code_to_use if lang_code_to_use else LANGUAGE
+    core_default_lang = _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
+    
     HOTKEY_ACTIONS = {}
     try:
         config_path = _HOTKEYS_FULL_PATH
         with open(config_path, 'r', encoding='utf-8') as f:
             raw_actions = json.load(f)
+
         for action_name, details in raw_actions.items():
-            localized_prompt = details['prompt']
-            if isinstance(localized_prompt, dict):
-                localized_prompt = localized_prompt.get(current_lang, localized_prompt.get(DEFAULT_LANGUAGE, f"Missing prompt for {action_name}"))
-            localized_description = details['description']
-            if isinstance(localized_description, dict):
-                localized_description = localized_description.get(current_lang, localized_description.get(DEFAULT_LANGUAGE, action_name))
+            prompt_data = details.get('prompt')
+            desc_data = details.get('description')
+            hotkey_val = details.get('hotkey')
+
+            if not hotkey_val:
+                logger.warning(f"Hotkey value missing for action '{action_name}'. Skipping.")
+                continue
+
+            if isinstance(prompt_data, dict):
+                localized_prompt = prompt_data.get(current_lang_for_hotkeys, prompt_data.get(core_default_lang))
+                if localized_prompt is None: localized_prompt = f"Prompt missing for {action_name}"
+            elif isinstance(prompt_data, str): localized_prompt = prompt_data
+            else: localized_prompt = f"Invalid/Missing prompt for {action_name}"
+
+            if isinstance(desc_data, dict):
+                localized_description = desc_data.get(current_lang_for_hotkeys, desc_data.get(core_default_lang))
+                if localized_description is None: localized_description = action_name
+            elif isinstance(desc_data, str): localized_description = desc_data
+            else: localized_description = action_name
+
             HOTKEY_ACTIONS[action_name] = {
-                'hotkey': details['hotkey'],
+                'hotkey': hotkey_val,
                 'prompt': localized_prompt,
                 'description': localized_description
             }
+        
         if DEFAULT_MANUAL_ACTION not in HOTKEY_ACTIONS:
-            msg = f"DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found in '{config_path}'."
+            msg = (f"Critical: DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found "
+                   f"after localizing for '{current_lang_for_hotkeys}'. Check '{config_path}'.")
             logger.error(msg)
             raise ValueError(msg)
-        logger.debug("Hotkey actions loaded successfully from %s for language %s", config_path, current_lang)
+
+        logger.debug("Hotkey actions loaded for language %s", current_lang_for_hotkeys)
+
     except FileNotFoundError:
-        logger.error("Hotkey configuration file '%s' not found.", config_path, exc_info=False)
-        raise
+        logger.error("Hotkey file '%s' not found.", config_path, exc_info=False); raise
     except json.JSONDecodeError as e:
-        logger.error("Error decoding JSON from hotkey file '%s': %s", config_path, e, exc_info=False)
-        raise
+        logger.error("Error decoding hotkey file '%s': %s", config_path, e, exc_info=False); raise
     except Exception as e:
-        logger.error("Error loading hotkey actions from '%s': %s", config_path, e, exc_info=True)
-        raise
+        logger.error("Error loading hotkey actions from '%s': %s", config_path, e, exc_info=True); raise
 
 def T(key, lang=None):
-    current_lang_code = lang if lang else LANGUAGE
+    global LANGUAGE, UI_TEXTS
+    target_lang = lang if lang else LANGUAGE
+    core_default_lang = _DEFAULT_CORE_SETTINGS['DEFAULT_LANGUAGE']
+
     if not UI_TEXTS:
-        logger.warning("T function called but UI_TEXTS is uninitialized (key: %s).", key)
-        return f"<{key} (UI_TEXTS_UNINITIALIZED)>"
-    lang_texts = UI_TEXTS.get(current_lang_code)
-    if lang_texts:
-        text_value = lang_texts.get(key)
-        if text_value is not None: return text_value
-    if current_lang_code != DEFAULT_LANGUAGE:
-        default_lang_texts = UI_TEXTS.get(DEFAULT_LANGUAGE)
-        if default_lang_texts:
-            text_value = default_lang_texts.get(key)
-            if text_value is not None: return text_value
-    logger.warning("UI text key '%s' not found for language '%s' or default language.", key, current_lang_code)
+        logger.warning("T(key='%s'): UI_TEXTS uninitialized. Fallback.", key)
+        return f"<{key} (UI_TEXTS_UNINIT)>"
+
+    if target_lang in UI_TEXTS and key in UI_TEXTS[target_lang]:
+        return UI_TEXTS[target_lang][key]
+    if target_lang != core_default_lang and core_default_lang in UI_TEXTS and key in UI_TEXTS[core_default_lang]:
+        logger.debug("T(key='%s'): Used core default lang '%s'.", key, core_default_lang)
+        return UI_TEXTS[core_default_lang][key]
+    logger.warning("T(key='%s'): Not found for lang '%s' or core default. Placeholder.", key, target_lang)
     return f"<{key}>"
 
+# --- Constants (Application specific, not typically in settings.json) ---
 MAIN_WINDOW_GEOMETRY = '450x350'
 WINDOW_RESIZABLE_WIDTH = False
 WINDOW_RESIZABLE_HEIGHT = False
@@ -277,12 +365,6 @@ RESPONSE_BUTTON_PADDING_Y = (5, 10)
 RESPONSE_BUTTON_PADDING_X = 5
 FONT_SIZE_LABEL_WIDTH = 10
 CODE_FONT_SIZE_OFFSET = -1
-OVERLAY_ALPHA = 0.4
-OVERLAY_CURSOR = 'cross'
-OVERLAY_BG_COLOR = 'gray'
-SELECTION_RECT_COLOR = 'red'
-SELECTION_RECT_WIDTH = 2
-DEFAULT_FONT_SIZE = int(_app_config.get('DEFAULT_FONT_SIZE', _DEFAULT_CORE_SETTINGS['DEFAULT_FONT_SIZE']))
 MIN_FONT_SIZE = 8
 MAX_FONT_SIZE = 17
 CODE_FONT_FAMILY = 'Courier New'
@@ -290,7 +372,6 @@ MIN_SELECTION_WIDTH = 10
 MIN_SELECTION_HEIGHT = 10
 CAPTURE_DELAY = 0.2
 SCREENSHOT_FORMAT = 'PNG'
-_icon_filename_from_config = _app_config.get('ICON_FILENAME_PNG', _DEFAULT_CORE_SETTINGS['ICON_FILENAME_PNG'])
 ICON_PATH = os.path.join(_BUNDLE_DIR, _icon_filename_from_config)
 TRAY_ICON_NAME = 'screener_ollama_app'
 DEFAULT_ICON_WIDTH = 64
@@ -306,23 +387,35 @@ DEFAULT_ICON_TEXT_COLOR = 'white'
 COPY_BUTTON_RESET_DELAY_MS = 2000
 THREAD_JOIN_TIMEOUT_SECONDS = 1.0
 
+# --- Overlay Specific Constants (Used by capture.py) ---
+OVERLAY_ALPHA = 0.4
+OVERLAY_CURSOR = 'cross'
+OVERLAY_BG_COLOR = 'gray'
+SELECTION_RECT_COLOR = 'red'
+SELECTION_RECT_WIDTH = 2
+# MIN_SELECTION_WIDTH and MIN_SELECTION_HEIGHT are already defined above, they are shared.
+# CAPTURE_DELAY is also already defined above.
+
+
+# --- Initial Load of Language-Dependent Resources ---
 _initialization_errors = []
-logger.info("Starting initialization of UI texts and hotkey actions...")
+logger.info("Starting initial load of UI texts and hotkey actions using LANGUAGE: %s", LANGUAGE)
+
 try: load_ui_texts()
 except Exception as e:
-    err_msg = f"UI texts ({UI_TEXTS_FILE_NAME}): {e}"
-    logger.critical("CRITICAL: Failed to load UI texts: %s", err_msg, exc_info=False)
+    err_msg = f"Failed to load UI texts ({UI_TEXTS_FILE_NAME}): {type(e).__name__} - {e}"
+    logger.critical(err_msg, exc_info=False)
     _initialization_errors.append(err_msg)
 
-try: load_hotkey_actions(LANGUAGE)
+try: load_hotkey_actions()
 except Exception as e:
-    err_msg = f"Hotkey actions ({HOTKEYS_CONFIG_FILE_NAME}): {e}"
-    logger.critical("CRITICAL: Failed to load hotkey actions: %s", err_msg, exc_info=False)
+    err_msg = f"Failed to load hotkey actions ({HOTKEYS_CONFIG_FILE_NAME}): {type(e).__name__} - {e}"
+    logger.critical(err_msg, exc_info=False)
     _initialization_errors.append(err_msg)
 
 if _initialization_errors:
-    logger.error("="*30 + " SETTINGS INITIALIZATION ERRORS " + "="*30)
+    logger.error("="*30 + " CRITICAL SETTINGS INITIALIZATION ERRORS " + "="*30)
     for _err in _initialization_errors: logger.error(" - %s", _err)
-    logger.error("="* (60 + len(" SETTINGS INITIALIZATION ERRORS ") +2))
+    logger.error("="* (60 + len(" CRITICAL SETTINGS INITIALIZATION ERRORS ") +2))
 else:
-    logger.info("UI texts and hotkey actions initialized successfully.")
+    logger.info("UI texts and hotkey actions initialized successfully for language: %s.", LANGUAGE)

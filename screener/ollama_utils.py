@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Import necessary settings and T function
 try:
-    import settings # Assuming settings.py initializes logging
+    import screener.settings as settings # Assuming settings.py initializes logging
     T = settings.T
 except ImportError:
     # This fallback is primarily for standalone testing of this module,

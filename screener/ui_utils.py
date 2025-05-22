@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 logger = logging.getLogger(__name__)
 
 try:
-    import settings # Assuming settings.py initializes logging
+    import screener.settings as settings
     T = settings.T
 except ImportError as e:
     # This fallback is primarily for standalone testing or if settings.py fails very early.
