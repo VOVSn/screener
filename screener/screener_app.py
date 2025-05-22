@@ -7,6 +7,7 @@ import platform
 import time # For short delays
 import os
 import sys
+from functools import partial # IMPORTED
 
 from PIL import Image
 
@@ -24,7 +25,7 @@ from screener.tray_manager import TrayManager, PYSTRAY_AVAILABLE as TRAY_AVAILAB
 logger = logging.getLogger(__name__)
 
 class ScreenerApp:
-    PYSTRAY_AVAILABLE = TRAY_AVAILABLE_FROM_MODULE # Make it an instance or class variable
+    PYSTRAY_AVAILABLE = TRAY_AVAILABLE_FROM_MODULE 
 
     def __init__(self):
         logger.info("Initializing ScreenerApp...")
@@ -136,36 +137,66 @@ class ScreenerApp:
             logger.error("Ollama connection error: %s. URL: %s", e, settings.OLLAMA_URL, exc_info=False)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_conn_error_title'), settings.T('dialog_ollama_conn_error_msg').format(url=settings.OLLAMA_URL), parent=self.root)
+                show_error_callable = partial(messagebox.showerror, 
+                                              settings.T('dialog_ollama_conn_error_title'), 
+                                              settings.T('dialog_ollama_conn_error_msg').format(url=settings.OLLAMA_URL), 
+                                              parent=self.root)
+                # FIXED: Wrap partial in lambda
+                self.root.after(0, lambda: show_error_callable())
         except OllamaTimeoutError as e:
             msg = f"{settings.T('ollama_timeout_status')}"
             logger.error("Ollama request timed out: %s. URL: %s", e, settings.OLLAMA_URL, exc_info=False)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_timeout_title'), settings.T('dialog_ollama_timeout_msg').format(url=settings.OLLAMA_URL), parent=self.root)
+                show_error_callable = partial(messagebox.showerror, 
+                                              settings.T('dialog_ollama_timeout_title'), 
+                                              settings.T('dialog_ollama_timeout_msg').format(url=settings.OLLAMA_URL), 
+                                              parent=self.root)
+                # FIXED: Wrap partial in lambda
+                self.root.after(0, lambda: show_error_callable())
         except OllamaRequestError as e:
             msg = f"{settings.T('ollama_request_failed_status')}: {e.detail or e}"
             logger.error("Ollama request error. Status: %s, Detail: %s", e.status_code, e.detail, exc_info=False)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_error_title'), f"{msg}\n(Status: {e.status_code})", parent=self.root)
+                show_error_callable = partial(messagebox.showerror, 
+                                              settings.T('dialog_ollama_error_title'), 
+                                              f"{msg}\n(Status: {e.status_code})", 
+                                              parent=self.root)
+                # FIXED: Wrap partial in lambda
+                self.root.after(0, lambda: show_error_callable())
         except OllamaError as e: 
             msg = f"{settings.T('ollama_request_failed_status')}: {e}"
             logger.error("Generic Ollama library error: %s", e, exc_info=True)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_ollama_error_title'), msg, parent=self.root)
+                show_error_callable = partial(messagebox.showerror, 
+                                              settings.T('dialog_ollama_error_title'), 
+                                              msg, 
+                                              parent=self.root)
+                # FIXED: Wrap partial in lambda
+                self.root.after(0, lambda: show_error_callable())
         except ValueError as e: 
             msg = f"{settings.T('error_preparing_image_status')}: {e}"
             logger.error("Value error during Ollama request prep: %s", e, exc_info=True)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, msg, 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_internal_error_title'), msg, parent=self.root) 
+                show_error_callable = partial(messagebox.showerror, 
+                                              settings.T('dialog_internal_error_title'), 
+                                              msg, 
+                                              parent=self.root)
+                # FIXED: Wrap partial in lambda
+                self.root.after(0, lambda: show_error_callable())
         except Exception as e:
             logger.critical("Unexpected error in Ollama worker thread.", exc_info=True)
             if not self.root_destroyed and self.root and self.root.winfo_exists():
                 self.root.after(0, self.ui_manager.update_status, settings.T('unexpected_error_status'), 'status_error_fg')
-                self.root.after(0, messagebox.showerror, settings.T('dialog_unexpected_error_title'), f"{settings.T('unexpected_error_status')}: {e}", parent=self.root)
+                show_error_callable = partial(messagebox.showerror, 
+                                              settings.T('dialog_unexpected_error_title'), 
+                                              f"{settings.T('unexpected_error_status')}: {e}", 
+                                              parent=self.root)
+                # FIXED: Wrap partial in lambda
+                self.root.after(0, lambda: show_error_callable())
         logger.debug("Ollama worker thread finished.")
 
     def change_theme(self, theme_name, icon=None, item=None): 
@@ -224,14 +255,8 @@ class ScreenerApp:
         if self.PYSTRAY_AVAILABLE and self.tray_manager:
             logger.info(settings.T('stopping_tray_status'))
             if _initiated_by_tray_thread:
-                # The tray thread has already called tray_icon.stop() via TrayManager.request_app_exit_from_menu().
-                # It will exit on its own. We should not join it here from the main thread
-                # as it might still be processing the stop signal. The post-mainloop cleanup will do a final join.
                 logger.debug("on_exit: Tray shutdown was initiated by tray thread. Tray thread manages its own stop. Final join later.")
             else:
-                # This on_exit is from UI button, WM_DELETE (if no tray), or other external means.
-                # We are likely on the main thread or a non-tray worker thread.
-                # It's safe to call the blocking stop & join for the tray.
                 self.tray_manager.stop_and_join_thread_blocking()
         
         if not self.root_destroyed and self.root and self.root.winfo_exists():
@@ -239,7 +264,7 @@ class ScreenerApp:
             if threading.current_thread() == threading.main_thread():
                 self._destroy_root_safely()
             else:
-                if self.root and self.root.winfo_exists(): # Re-check root before scheduling
+                if self.root and self.root.winfo_exists(): 
                     self.root.after(0, self._destroy_root_safely)
                 else: 
                     self.root_destroyed = True
@@ -296,10 +321,8 @@ class ScreenerApp:
         logger.info("Post-mainloop cleanup started.")
         if self.running: 
             logger.warning("Mainloop exited but app still marked running. Forcing on_exit.")
-            # If mainloop exits unexpectedly, _initiated_by_tray_thread will be False.
             self.on_exit(is_wm_delete=True, _initiated_by_tray_thread=False) 
         
-        # Defensive cleanup calls. These run on the main thread.
         if self.hotkey_manager: 
             logger.debug("Post-mainloop: Ensuring hotkey listener is stopped.")
             self.hotkey_manager.stop_listener() 

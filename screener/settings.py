@@ -149,7 +149,10 @@ THEME_COLORS = {
     'light': {
         'app_bg': '#F0F0F0', 'app_fg': '#000000', 'text_bg': '#FFFFFF', 'text_fg': '#000000',
         'text_disabled_bg': '#F0F0F0', 'button_bg': '#E1E1E1', 'button_fg': '#000000',
-        'button_active_bg': '#ECECEC', 'entry_bg': '#FFFFFF', 'entry_fg': '#000000',
+        'button_active_bg': '#ECECEC', 
+        'button_exit_bg': '#B0B0B0', 'button_exit_fg': '#000000', # Darker for light theme
+        'button_exit_active_bg': '#C8C8C8', # Slightly lighter active for exit button
+        'entry_bg': '#FFFFFF', 'entry_fg': '#000000',
         'entry_select_bg': '#0078D7', 'entry_select_fg': '#FFFFFF', 'label_fg': '#000000',
         'disabled_fg': '#A3A3A3', 'status_default_fg': 'gray', 'status_ready_fg': 'blue',
         'status_processing_fg': 'darkorange', 'status_error_fg': 'red',
@@ -165,7 +168,10 @@ THEME_COLORS = {
     'dark': {
         'app_bg': '#2B2B2B', 'app_fg': '#BBBBBB', 'text_bg': '#1E1E1E', 'text_fg': '#D4D4D4',
         'text_disabled_bg': '#252525', 'button_bg': '#3E3E3E', 'button_fg': '#E0E0E0',
-        'button_active_bg': '#4F4F4F', 'entry_bg': '#3C3C3C', 'entry_fg': '#D4D4D4',
+        'button_active_bg': '#4F4F4F', 
+        'button_exit_bg': '#2F2F2F', 'button_exit_fg': '#C0C0C0', # Darker for dark theme
+        'button_exit_active_bg': '#3A3A3A', # Slightly lighter active for exit button
+        'entry_bg': '#3C3C3C', 'entry_fg': '#D4D4D4',
         'entry_select_bg': '#007ACC', 'entry_select_fg': '#FFFFFF', 'label_fg': '#E0E0E0',
         'disabled_fg': '#7A7A7A', 'status_default_fg': '#999999', 'status_ready_fg': '#569CD6',
         'status_processing_fg': '#CE9178', 'status_error_fg': '#F44747',
@@ -194,7 +200,9 @@ def get_theme_color(key, theme=None):
     
     if color is None:
         logger.warning("Theme color key '%s' not found for theme '%s'. Trying ultimate fallback theme '%s' for this key.", key, current_theme_name_to_use, ultimate_fallback_theme_name)
-        color = THEME_COLORS[ultimate_fallback_theme_name].get(key, '#FF00FF')
+        color = THEME_COLORS[ultimate_fallback_theme_name].get(key, '#FF00FF') # Magenta if key totally missing
+        if color == '#FF00FF':
+            logger.error("CRITICAL: Theme color key '%s' is missing from ALL themes, including fallback. Defaulting to Magenta.", key)
     return color
 
 def set_theme(new_theme):
@@ -314,10 +322,21 @@ def load_hotkey_actions(lang_code_to_use=None):
             }
         
         if DEFAULT_MANUAL_ACTION not in HOTKEY_ACTIONS:
-            msg = (f"Critical: DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found "
-                   f"after localizing for '{current_lang_for_hotkeys}'. Check '{config_path}'.")
-            logger.error(msg)
-            raise ValueError(msg)
+            # Check if custom prompt placeholder can be a fallback, though not ideal for this key
+            custom_action_key = None
+            for k, v in HOTKEY_ACTIONS.items():
+                if v.get('prompt') == CUSTOM_PROMPT_IDENTIFIER:
+                    custom_action_key = k
+                    break
+            
+            if not custom_action_key and 'describe' not in HOTKEY_ACTIONS: # Last resort before error
+                msg = (f"Critical: DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found "
+                       f"after localizing for '{current_lang_for_hotkeys}', and no 'describe' or custom prompt action available. Check '{config_path}'.")
+                logger.error(msg)
+                raise ValueError(msg)
+            elif DEFAULT_MANUAL_ACTION not in HOTKEY_ACTIONS:
+                 logger.warning(f"DEFAULT_MANUAL_ACTION '{DEFAULT_MANUAL_ACTION}' not found. Tray/UI may use 'describe' or custom prompt as fallback if available.")
+
 
         logger.debug("Hotkey actions loaded for language %s", current_lang_for_hotkeys)
 
@@ -346,9 +365,9 @@ def T(key, lang=None):
     return f"<{key}>"
 
 # --- Constants (Application specific, not typically in settings.json) ---
-MAIN_WINDOW_GEOMETRY = '450x350'
+MAIN_WINDOW_GEOMETRY = '350x500'
 WINDOW_RESIZABLE_WIDTH = False
-WINDOW_RESIZABLE_HEIGHT = False
+WINDOW_RESIZABLE_HEIGHT = False # Consider True if single column buttons make it too tall
 PADDING_SMALL = 5
 PADDING_LARGE = 10
 RESPONSE_WINDOW_MIN_WIDTH = 400
@@ -363,7 +382,7 @@ RESPONSE_CONTROL_PADDING_X = 10
 RESPONSE_CONTROL_PADDING_Y = 5
 RESPONSE_BUTTON_PADDING_Y = (5, 10)
 RESPONSE_BUTTON_PADDING_X = 5
-FONT_SIZE_LABEL_WIDTH = 10
+FONT_SIZE_LABEL_WIDTH = 11
 CODE_FONT_SIZE_OFFSET = -1
 MIN_FONT_SIZE = 8
 MAX_FONT_SIZE = 17
