@@ -3,7 +3,7 @@
 <!-- Screenshot Placeholder: Main Application Window -->
 <!-- Ideal: Show the main UI with custom prompt, action buttons, Ping Ollama, Re-open Session -->
 
-**English** | [Русский](#-скриншот-в-ollama-инструмент-взаимодействия)
+**English** | [Русский](#screener-скриншот-в-ollama-инструмент-взаимодействия)
 
 Screener is a desktop application that allows you to capture a region of your screen, send it to a running Ollama instance with a specific prompt, and interact with the response. You can ask follow-up questions about the image and Ollama's analysis, creating a conversation around the visual context.
 
@@ -150,7 +150,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Screener: Скриншот в Ollama - Инструмент Взаимодействия
 
-<!-- Screenshot Placeholder: Main Application Window (можно тот же, что и для английской части) -->
 
 **[English](#screener-screenshot-to-ollama-interaction-tool)** | Русский
 
@@ -212,7 +211,7 @@ Screener — это десктопное приложение, которое п
         ```json
         {
             "OLLAMA_URL": "http://localhost:11434/api/generate",
-            "OLLAMA_MODEL": "llava:latest", // Ваша предпочитаемая мультимодальная модель
+            "OLLAMA_MODEL": "gemma3:4b",
             "OLLAMA_TIMEOUT_SECONDS": 180,
             "DEFAULT_LANGUAGE": "ru", // язык по умолчанию
             "DEFAULT_THEME": "dark",
