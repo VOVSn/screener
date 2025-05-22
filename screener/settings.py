@@ -161,9 +161,28 @@ THEME_COLORS = {
         'scale_trough': '#D3D3D3', 'separator_color': '#CCCCCC',
         'md_h1_fg': '#000080', 'md_h2_fg': '#00008B', 'md_list_item_fg': '#228B22',
         'md_inline_code_bg': '#E0E0E0', 'md_inline_code_fg': '#C7254E',
-        'python_keyword_fg': '#0000FF', 'python_string_fg': '#008000',
-        'python_comment_fg': '#808080', 'python_number_fg': '#A52A2A',
-        'python_function_fg': '#800080', 'python_builtin_fg': '#800080',
+        # Pygments related colors for light theme
+        'pygments_text_fg': '#000000', # General text in code block
+        'pygments_keyword_fg': '#0000FF',          # blue (Keyword)
+        'pygments_keyword_constant_fg': '#AA22FF', # purple (True, False, None)
+        'pygments_keyword_namespace_fg': '#0077AA',# teal (import, from)
+        'pygments_name_fg': '#000000',             # black (default for names)
+        'pygments_name_function_fg': '#795E26',    # dark brown (def func_name)
+        'pygments_name_class_fg': '#267F99',       # teal (class ClassName)
+        'pygments_name_builtin_fg': '#AA22FF',     # purple (print, len)
+        'pygments_name_decorator_fg': '#795E26',   # dark brown (@decorator)
+        'pygments_string_fg': '#008000',           # green (strings)
+        'pygments_string_doc_fg': '#808080',       # gray (docstrings, like comments)
+        'pygments_comment_fg': '#808080',          # gray (comments)
+        'pygments_number_fg': '#A52A2A',           # brown-red (numbers)
+        'pygments_operator_fg': '#555555',         # dark gray (operators)
+        'pygments_punctuation_fg': '#000000',      # black (punctuation)
+        'pygments_error_fg': '#FF0000',            # red (lexing errors)
+        'pygments_generic_heading_fg': '#000080',  # Used by some formatters (e.g., for diffs)
+        'pygments_generic_subheading_fg': '#00008B',
+        'pygments_generic_deleted_fg': '#A52A2A',
+        'pygments_generic_inserted_fg': '#008000',
+        'pygments_generic_traceback_fg': '#A52A2A',
     },
     'dark': {
         'app_bg': '#2B2B2B', 'app_fg': '#BBBBBB', 'text_bg': '#1E1E1E', 'text_fg': '#D4D4D4',
@@ -180,9 +199,28 @@ THEME_COLORS = {
         'scale_trough': '#4A4A4A', 'separator_color': '#444444',
         'md_h1_fg': '#569CD6', 'md_h2_fg': '#4EC9B0', 'md_list_item_fg': '#B5CEA8',
         'md_inline_code_bg': '#3A3A3A', 'md_inline_code_fg': '#D69D85',
-        'python_keyword_fg': '#569CD6', 'python_string_fg': '#CE9178',
-        'python_comment_fg': '#6A9955', 'python_number_fg': '#B5CEA8',
-        'python_function_fg': '#DCDCAA', 'python_builtin_fg': '#DCDCAA',
+        # Pygments related colors for dark theme
+        'pygments_text_fg': '#D4D4D4',             # light gray (General text in code block)
+        'pygments_keyword_fg': '#569CD6',          # blue (Keyword)
+        'pygments_keyword_constant_fg': '#C586C0', # light purple (True, False, None)
+        'pygments_keyword_namespace_fg': '#4EC9B0',# teal (import, from)
+        'pygments_name_fg': '#D4D4D4',             # light gray (default for names)
+        'pygments_name_function_fg': '#DCDCAA',    # light yellow (def func_name)
+        'pygments_name_class_fg': '#4EC9B0',       # teal (class ClassName)
+        'pygments_name_builtin_fg': '#C586C0',     # light purple (print, len)
+        'pygments_name_decorator_fg': '#DCDCAA',   # light yellow (@decorator)
+        'pygments_string_fg': '#CE9178',           # orange-brown (strings)
+        'pygments_string_doc_fg': '#6A9955',       # green (docstrings)
+        'pygments_comment_fg': '#6A9955',          # green (comments)
+        'pygments_number_fg': '#B5CEA8',           # light green (numbers)
+        'pygments_operator_fg': '#D4D4D4',         # light gray (operators)
+        'pygments_punctuation_fg': '#D4D4D4',      # light gray (punctuation)
+        'pygments_error_fg': '#F44747',            # red (lexing errors)
+        'pygments_generic_heading_fg': '#569CD6',
+        'pygments_generic_subheading_fg': '#4EC9B0',
+        'pygments_generic_deleted_fg': '#CE9178',
+        'pygments_generic_inserted_fg': '#B5CEA8',
+        'pygments_generic_traceback_fg': '#CE9178',
     }
 }
 
